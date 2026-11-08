@@ -12,12 +12,13 @@ function savedHeight(mobile) {
   return defaultHeight(mobile);
 }
 
-export default function ResizableChatInput({ value, onChange, onKeyDown, placeholder }) {
+export default function ResizableChatInput({ value, onChange, onKeyDown, placeholder, inputRef }) {
   const [mobile, setMobile] = useState(compactScreen);
   const [preferred, setPreferred] = useState(() => savedHeight(compactScreen()));
   const [maximum, setMaximum] = useState(Infinity);
   const textarea = useRef(null);
   const drag = useRef(null);
+  useEffect(()=>{if(inputRef)inputRef.current=textarea.current;return()=>{if(inputRef)inputRef.current=null;};},[inputRef]);
   const minimum = minimumHeight(mobile);
   const height = Math.max(minimum, Math.min(preferred, maximum));
 

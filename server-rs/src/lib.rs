@@ -14,6 +14,8 @@ pub mod probe; pub use probe::*;
 pub mod approvals; pub use approvals::*;
 pub mod judge; pub use judge::*;
 pub mod agent; pub use agent::*;
+pub mod chat_stats;
+pub mod workspace;
 pub mod routes; pub use routes::*;
 pub mod ws; pub use ws::*;
 pub mod mcp; pub use mcp::*;
@@ -84,6 +86,8 @@ impl ExecConn {
 }
 
 pub struct AppState {
+    pub workspace:crate::workspace::WorkspaceHub,
+    pub folder_picker:std::sync::RwLock<Option<Arc<dyn Fn()->Result<Option<String>,String>+Send+Sync>>>,
     pub external_opener:std::sync::RwLock<Option<Arc<dyn Fn(&str)->Result<(),String>+Send+Sync>>>,
     pub tool_operations: std::sync::atomic::AtomicUsize,
     pub hosts: RwLock<Vec<Value>>,
@@ -104,6 +108,8 @@ impl AppState {
     pub fn new() -> Arc<Self> {
         let (tx_all, _) = tokio::sync::broadcast::channel(4096);
         Arc::new(Self {
+            workspace:crate::workspace::WorkspaceHub::new(),
+            folder_picker:std::sync::RwLock::new(None),
             external_opener:std::sync::RwLock::new(None),
             tool_operations:std::sync::atomic::AtomicUsize::new(0),
             hosts: RwLock::new(Vec::new()),
@@ -145,6 +151,7 @@ impl AppState {
 /// 载入 hosts 并启动探针（bin 与 Tauri 壳共用）
 pub async fn bootstrap(st: &Arc<AppState>) {
     if let Err(error)=crate::validate_storage(){crate::store::report_storage_error(error);return;}
+    st.workspace.load().await;
     crate::jobs::restore(st).await;
     let hosts: Vec<Value> = load_json_or("hosts.json", serde_json::json!([]))
         .as_array()

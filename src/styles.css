@@ -630,8 +630,14 @@ textarea { resize: vertical; line-height: 1.6; }
 .memory-controls > input { flex:1; min-width:120px; }
 .memory-controls > select { width:auto; }
 .memory-editor { padding:12px; border:1px solid var(--accent); border-radius:var(--radius); margin:10px 0; }
-.memory-list { display:flex; flex-direction:column; gap:8px; max-height:520px; overflow:auto; }
-.memory-row { padding:10px; border:1px solid var(--border2); border-radius:var(--radius); }
+.memory-list { display:flex; flex-direction:column; gap:0; max-height:360px; min-height:80px; overflow:auto; overscroll-behavior:contain; }
+.memory-row { display:grid; grid-template-columns:16px 24px minmax(0,1fr) 52px; gap:6px; align-items:center; padding:7px 4px; min-height:36px; flex-shrink:0; border-bottom:1px solid var(--border2); }
+.memory-row>input { margin:0; width:16px; height:16px; }
+.memory-edit,.memory-content,.memory-state { border:0; background:none; color:var(--muted); padding:3px; cursor:pointer; }
+.memory-content { text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); font-size:12px; }
+.memory-edit { display:grid; place-items:center; }
+.memory-state { font-size:11px; white-space:nowrap; }
+.memory-state.on { color:var(--accent); }
 .memory-row.disabled { opacity:0.7; }
 .memory-row-head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .memory-row-head > strong { flex:1; overflow-wrap:anywhere; }
@@ -652,6 +658,23 @@ textarea { resize: vertical; line-height: 1.6; }
 .queue-item { border:1px solid var(--border); border-radius:var(--radius); padding:7px; margin-top:6px; }
 .queue-item p { font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:60px; overflow:auto; }
 .queue-item textarea { min-height:70px; }
+.queue-item { display:flex; align-items:flex-start; gap:5px; }
+.queue-message { flex:1; min-width:0; border:0; background:none; color:var(--text); text-align:left; padding:0; font:inherit; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; cursor:pointer; }
+.queue-remove { border:0; background:none; color:var(--muted); padding:0 3px; cursor:pointer; }
+.reply-stats { margin-top:7px; font-size:10px; line-height:1.5; color:var(--faint); font-family:var(--mono); font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+.workspace-panel { flex-shrink:0; padding:10px 12px; border-bottom:1px solid var(--border); max-height:40%; overflow:auto; }
+.workspace-heading { display:flex; gap:6px; align-items:center; font-size:12px; }
+.workspace-heading>span { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+.workspace-close { border:0; background:none; color:var(--muted); cursor:pointer; }
+.workspace-tools { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+.workspace-upload { position:relative; cursor:pointer; }
+.workspace-upload>input { position:absolute; inset:0; width:100%; opacity:0; cursor:pointer; }
+.workspace-files { max-height:180px; overflow:auto; }
+.workspace-file { display:flex; align-items:center; gap:6px; padding:5px 0; }
+.workspace-file>button:first-child { flex:1; min-width:0; text-align:left; border:0; background:none; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; cursor:pointer; }
+.workspace-editor textarea { height:140px; margin-top:6px; font-family:var(--mono); }
+.workspace-directory { display:flex; align-items:center; gap:8px; }
+.workspace-directory>input { flex:1; min-width:0; }
 .memory-note { font-size:11px; color:var(--accent); padding:5px 12px; }
 .chat-delete-confirm { margin:6px; padding:9px; border:1px solid var(--red); border-radius:var(--radius); background:var(--panel2); }
 .chat-delete-confirm p { font-size:12px; color:var(--text); overflow-wrap:anywhere; }

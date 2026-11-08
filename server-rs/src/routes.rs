@@ -1264,6 +1264,12 @@ async fn static_fallback(method: axum::http::Method, uri: axum::http::Uri) -> Re
 
 pub fn router(st: App) -> Router {
     Router::new()
+        .route("/api/workspace",get(crate::workspace::status).put(crate::workspace::configure))
+        .route("/api/workspace/pick",post(crate::workspace::pick))
+        .route("/api/workspace/files",get(crate::workspace::files))
+        .route("/api/workspace/action",post(crate::workspace::action))
+        .route("/api/workspace/upload",post(crate::workspace::upload))
+        .route("/api/workspace/download",get(crate::workspace::download))
         .route("/api/storage/status",get(crate::storage::status))
         .route("/api/storage/retry",post(crate::storage::retry))
         .route("/api/open-external-url",post(open_external_url))

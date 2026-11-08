@@ -116,6 +116,7 @@ pub struct StreamResult {
     pub usage: Option<Value>,
     pub finish_reason: Option<String>,
     pub done: bool,
+    pub generation_ms:u64,
 }
 
 /// Node: chatCompletionStream —— SSE 流式解析 + 思考参数黑名单重试
@@ -228,6 +229,8 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
     let mut res = res.unwrap();
 
     // SSE 解析
+    let stream_started=std::time::Instant::now();
+    let mut first_output=None;
     let mut out = StreamResult::default();
     let mut tool_slots: Vec<Option<Value>> = Vec::new();
     use futures_util::StreamExt;
@@ -247,6 +250,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
             let line_bytes: Vec<u8> = pending.drain(..=pos).collect();
             let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
             process_line(&line, &mut out, &mut tool_slots, &opts)?;
+            if first_output.is_none()&&(!out.content.is_empty()||!out.reasoning.is_empty()||!tool_slots.is_empty()){first_output=Some(std::time::Instant::now());}
         }
     }
     // 处理最后未换行的残余
@@ -266,6 +270,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
         }
     }
     if out.content.is_empty() && out.tool_calls.is_empty() { return Err("模型没有返回正文或工具调用，请检查模型是否支持当前请求".into()); }
+    out.generation_ms=first_output.unwrap_or(stream_started).elapsed().as_millis().max(1) as u64;
     Ok(out)
 }
 

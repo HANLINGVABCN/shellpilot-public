@@ -178,6 +178,10 @@ async fn handle_ws(
         "chat-pause" => {crate::jobs::pause(st,true).await;Ok(())}
         "chat-resume" => {crate::jobs::pause(st,false).await;Ok(())}
         "chat-queue-remove" => {crate::jobs::edit(st,m["jobId"].as_str().unwrap_or(""),None).await}
+        "chat-queue-take" => {
+            let job=crate::jobs::take(st,m["jobId"].as_str().unwrap_or("")).await?;
+            let _=out_tx.send(json!({"type":"chat-queue-taken","jobId":job.id,"text":job.text}).to_string());Ok(())
+        }
         "chat-queue-edit" => {crate::jobs::edit(st,m["jobId"].as_str().unwrap_or(""),Some(m["text"].as_str().unwrap_or(""))).await}
         "chat-queue-clear" => {
             let mut agent=st.agent.lock().await;agent.queue.clear();crate::jobs::persist(&agent);drop(agent);crate::jobs::broadcast(st).await;Ok(())

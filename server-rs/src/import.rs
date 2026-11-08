@@ -68,7 +68,7 @@ pub fn validate_import_data(value: &Value) -> Result<Validated, String> {
     if let Some(memories)=value.get("memories") {
         let Some(memories)=memories.as_array()else{return Err("记忆备份必须是数组".into());};
         for memory in memories {
-            if !memory.is_object() || memory["topic"].as_str().map(|text|text.trim().is_empty()||text.chars().count()>2000).unwrap_or(true)
+            if !memory.is_object() || memory["topic"].as_str().is_some_and(|text|text.chars().count()>2000)
                 || memory["content"].as_str().map(|text|text.trim().is_empty()||text.chars().count()>2000).unwrap_or(true) {return Err("记忆备份格式错误".into());}
         }
     }

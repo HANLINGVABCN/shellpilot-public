@@ -21,29 +21,32 @@ pub fn list()->Vec<Value> { let _lock=LOCK.lock().unwrap();read() }
 pub fn enabled()->Vec<Value> {list().into_iter().filter(|memory|memory["enabled"].as_bool().unwrap_or(true)).collect()}
 pub fn save(body:&Value,id:Option<&str>,automatic:bool)->Result<Value,String> {
     if automatic && !crate::get_settings()["autoMemory"].as_bool().unwrap_or(true) {return Err("自动记忆已关闭，已有启用记忆仍参与回答".into());}
-    let topic=text(body,"topic")?;let content=text(body,"content")?;
+    let content=text(body,"content")?;
+    let topic=body["topic"].as_str().unwrap_or("").trim().to_string();
+    if topic.chars().count()>2000{return Err("记忆主题过长".into());}
+    let id=id.or_else(||body["memoryId"].as_str().filter(|id|!id.is_empty()));
     if automatic && (content.contains("PRIVATE KEY") || regex::Regex::new(r"(?i)(?:sk-[A-Za-z0-9_-]{12,}|(?:password|api[_ -]?key|token|密码|令牌)\s*[:=：]\s*\S+)").unwrap().is_match(&content)) {
         return Err("自动记忆不能保存密码、密钥或令牌".into());
     }
     let _lock=LOCK.lock().unwrap();let mut memories=read();
-    if memories.iter().any(|memory|id!=memory["id"].as_str() && normalized(memory["topic"].as_str().unwrap_or(""))==normalized(&topic)) && id.is_some(){return Err("已有相同主题的另一条记忆，请编辑原记录".into());}
+    if !topic.is_empty() && memories.iter().any(|memory|id!=memory["id"].as_str() && normalized(memory["topic"].as_str().unwrap_or(""))==normalized(&topic)) && id.is_some(){return Err("已有相同主题的另一条记忆，请编辑原记录".into());}
     if let Some(existing)=memories.iter().find(|memory|normalized(memory["content"].as_str().unwrap_or(""))==normalized(&content) && id!=memory["id"].as_str()) {
         return Ok(json!({"memory":existing,"status":"duplicate","message":"已有相同记忆，未重复添加或重新启用"}));
     }
     let index=if let Some(id)=id {
         Some(memories.iter().position(|memory|memory["id"].as_str()==Some(id)).ok_or("记忆不存在")?)
-    }else{memories.iter().position(|memory|normalized(memory["topic"].as_str().unwrap_or(""))==normalized(&topic))};
+    }else{if topic.is_empty(){None}else{memories.iter().position(|memory|normalized(memory["topic"].as_str().unwrap_or(""))==normalized(&topic))}};
     let now=crate::now_ms();
     let memory=if let Some(index)=index {
         let old=&memories[index];
         if automatic && (old["source"]=="manual" || old["enabled"]==false) {
             return Ok(json!({"memory":old,"status":"protected","message":"手动维护或已停用的记忆不可被 AI 自动覆盖"}));
         }
-        if id.is_none() && !automatic {return Err("已有同主题记忆，请编辑原记忆，避免矛盾".into());}
+        if id.is_none() && !automatic && !topic.is_empty(){return Err("已有同主题记忆，请编辑原记忆，避免矛盾".into());}
         if let Some(expected)=body["expectedUpdatedAt"].as_i64() {
             if old["updatedAt"].as_i64()!=Some(expected) {return Err("记忆已被其他页面修改，请刷新后再编辑".into());}
         }
-        let mut memory=old.clone();memory["topic"]=json!(topic);memory["content"]=json!(content);
+        let mut memory=old.clone();if !topic.is_empty(){memory["topic"]=json!(topic);}memory["content"]=json!(content);
         memory["updatedAt"]=json!(now.max(old["updatedAt"].as_i64().unwrap_or(0)+1));
         if !automatic {memory["source"]=json!("manual");}
         if let Some(enabled)=body["enabled"].as_bool(){memory["enabled"]=json!(enabled);}
@@ -65,15 +68,15 @@ pub fn change(ids:&[String],enabled:Option<bool>)->Result<usize,String> {
 
 pub fn import_records(incoming:&Value,overwrite:bool)->Result<(),String>{
     let Some(records)=incoming.as_array()else{return Err("记忆备份必须是数组".into());};
-    for record in records {text(record,"topic")?;text(record,"content")?;}
+    for record in records {text(record,"content")?;}
     let _lock=LOCK.lock().unwrap();let mut memories=if overwrite{Vec::new()}else{read()};
     for record in records{
-        if memories.iter().any(|memory|normalized(memory["topic"].as_str().unwrap_or(""))==normalized(record["topic"].as_str().unwrap_or("")) || normalized(memory["content"].as_str().unwrap_or(""))==normalized(record["content"].as_str().unwrap_or(""))){continue;}
+        if memories.iter().any(|memory|(record["topic"].as_str().is_some_and(|s|!s.trim().is_empty())&&normalized(memory["topic"].as_str().unwrap_or(""))==normalized(record["topic"].as_str().unwrap_or(""))) || normalized(memory["content"].as_str().unwrap_or(""))==normalized(record["content"].as_str().unwrap_or(""))){continue;}
         let mut record=record.clone();record["id"]=json!(crate::rand_id("mem"));memories.push(record);
     }
     write(&memories)
 }
-pub fn schema()->Value {json!({"type":"function","function":{"name":"remember_memory","description":"记住用户明确表达的长期偏好或稳定信息。topic 使用简短稳定主题。同主题 AI 记忆会更新，不能覆盖手动或停用记忆；不记密码、令牌、临时任务、工具输出。","parameters":{"type":"object","properties":{"topic":{"type":"string"},"content":{"type":"string"}},"required":["topic","content"],"additionalProperties":false}}})}
+pub fn schema()->Value {json!({"type":"function","function":{"name":"remember_memory","description":"用一句话记住用户明确表达的长期偏好或稳定信息。更新自己以前的记忆时传memoryId；不能覆盖手动或停用记忆。不记密码、令牌、临时任务、工具输出。","parameters":{"type":"object","properties":{"memoryId":{"type":"string"},"content":{"type":"string"}},"required":["content"],"additionalProperties":false}}})}
 
 #[cfg(test)]
 mod tests {

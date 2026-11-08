@@ -14,7 +14,7 @@ name = "shellpilot-server"
 path = "src/main.rs"
 
 [dependencies]
-axum = { version = "0.8", features = ["ws"] }
+axum = { version = "0.8", features = ["ws","multipart"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "time", "sync", "signal", "io-util", "io-std", "fs", "process"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -22,6 +22,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 russh = "0.46"
 async-trait = "0.1"
 tokio-stream = "0.1"
+tokio-util = { version="0.7",features=["io"] }
 bytes = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "http2"] }
 rust-embed = "8"

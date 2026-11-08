@@ -2,6 +2,8 @@ use crate::AppState;
 use serde::{Deserialize,Serialize};
 use serde_json::{json,Value};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64,Ordering};
+static STATE_REVISION:AtomicU64=AtomicU64::new(1);
 
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase")]
@@ -9,7 +11,7 @@ pub struct Job {pub id:String,pub text:String,pub chat_id:String,pub scope:Vec<S
 pub fn persist(agent:&crate::AgentState) {
     crate::save_json("agent-jobs.json",&json!({"queue":agent.queue,"active":agent.active_job,"paused":agent.paused}));
 }
-pub fn status(agent:&crate::AgentState)->Value {json!({"type":"chat-job-state","busy":agent.busy,"paused":agent.paused,"pauseReady":agent.pause_ready,"queue":agent.queue,"activeId":agent.active_job.as_ref().map(|job|&job.id),"chatId":agent.chat_id})}
+pub fn status(agent:&crate::AgentState)->Value {json!({"type":"chat-job-state","revision":STATE_REVISION.fetch_add(1,Ordering::SeqCst),"busy":agent.busy||agent.active_job.is_some(),"paused":agent.paused,"pauseReady":agent.pause_ready,"queue":agent.queue,"activeId":agent.active_job.as_ref().map(|job|&job.id),"chatId":agent.chat_id})}
 pub fn repair_history(messages:Vec<Value>)->Vec<Value>{
     let mut output=Vec::new();let mut index=0;
     while index<messages.len(){
@@ -91,6 +93,12 @@ pub async fn edit(st:&Arc<AppState>,id:&str,text:Option<&str>)->Result<(),String
     if let Some(text)=text{if text.trim().is_empty(){return Err("消息不能为空".into());}agent.queue[index].text=text.trim().into();}
     else {agent.queue.remove(index);}
     persist(&agent);drop(agent);broadcast(st).await;Ok(())
+}
+pub async fn take(st:&Arc<AppState>,id:&str)->Result<Job,String>{
+    let mut agent=st.agent.lock().await;
+    let index=agent.queue.iter().position(|job|job.id==id).ok_or("这条消息已经开始执行，不能取回")?;
+    let job=agent.queue.remove(index).unwrap();
+    persist(&agent);drop(agent);broadcast(st).await;Ok(job)
 }
 pub async fn restore(st:&Arc<AppState>){
     let saved=crate::load_json_or("agent-jobs.json",json!({}));let mut agent=st.agent.lock().await;

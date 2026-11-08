@@ -25,6 +25,8 @@ pub fn run() {
 
             let app_handle=app.handle().clone();
             let st=shellpilot_server::AppState::new();
+            #[cfg(target_os="windows")]
+            {*st.folder_picker.write().unwrap()=Some(std::sync::Arc::new(shellpilot_server::workspace::windows::pick_folder));}
             *st.external_opener.write().unwrap()=Some(std::sync::Arc::new(move|url|app_handle.opener().open_url(url,None::<&str>).map_err(|error|format!("无法打开系统浏览器：{error}"))));
             let port = tauri::async_runtime::block_on(async move {
                 shellpilot_server::bootstrap(&st).await;

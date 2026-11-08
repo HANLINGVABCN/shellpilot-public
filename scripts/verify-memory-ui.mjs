@@ -19,6 +19,7 @@ try{
       if(message.type==='chat-queue-edit'){jobs.queue=jobs.queue.map((job)=>job.id===message.jobId?{...job,text:message.text}:job);}
       if(message.type==='chat-queue-remove'){jobs.queue=jobs.queue.filter((job)=>job.id!==message.jobId);}
       if(message.type==='chat-queue-clear')jobs.queue=[];
+      if(message.type==='chat-queue-take'){const job=jobs.queue.find(job=>job.id===message.jobId);jobs.queue=jobs.queue.filter(job=>job.id!==message.jobId);ws.send(JSON.stringify({type:'chat-queue-taken',jobId:job.id,text:job.text}));}
       ws.send(JSON.stringify({type:'chat-job-state',...jobs}));
     });});
     const stored=[{role:'user',content:'检查目录'},{role:'assistant',tool_calls:[{id:'call',function:{name:'vps_exec',arguments:JSON.stringify({host:'demo',command:'ls -la /srv/demo\nprintf done'})}}]},
@@ -49,17 +50,17 @@ try{
     await page.getByRole('combobox',{name:'记忆筛选',exact:true}).selectOption('disabled');
     await page.getByText('解释时使用简单的话',{exact:true}).waitFor();
     await page.getByRole('button',{name:'添加记忆',exact:true}).click();
-    await page.getByRole('textbox',{name:'记忆主题',exact:true}).fill('语言');await page.getByRole('textbox',{name:'记忆内容',exact:true}).fill('优先中文');
+    await page.getByRole('textbox',{name:'记忆内容',exact:true}).fill('优先中文');
     await page.getByRole('button',{name:'保存记忆',exact:true}).click();
     await page.getByRole('combobox',{name:'记忆筛选',exact:true}).selectOption('all');
     await page.getByText('优先中文',{exact:true}).waitFor();
-    const row=page.locator('.memory-row').filter({hasText:'语言'});
-    await row.getByRole('button',{name:'编辑记忆',exact:true}).click();await page.getByRole('textbox',{name:'记忆内容',exact:true}).fill('使用中文并保持简短');await page.getByRole('button',{name:'保存记忆',exact:true}).click();
+    const row=page.locator('.memory-row').filter({hasText:'优先中文'});
+    await row.locator('.memory-edit').click();await page.getByRole('textbox',{name:'记忆内容',exact:true}).fill('使用中文并保持简短');await page.getByRole('button',{name:'保存记忆',exact:true}).click();
     await page.getByText('使用中文并保持简短',{exact:true}).waitFor();
-    await page.getByRole('checkbox',{name:'选择记忆 语言',exact:true}).check();await page.getByRole('checkbox',{name:'选择记忆 回答方式',exact:true}).check();
+    await page.locator('.memory-row').filter({hasText:'使用中文并保持简短'}).getByRole('checkbox').check();await page.locator('.memory-row').filter({hasText:'解释时使用简单的话'}).getByRole('checkbox').check();
     await page.getByRole('button',{name:'停用所选',exact:true}).click();
     await page.getByRole('button',{name:'停用所选',exact:true}).waitFor({state:'detached'});
-    await page.getByRole('checkbox',{name:'选择记忆 语言',exact:true}).check();await page.getByRole('button',{name:'删除所选记忆',exact:true}).click();await page.getByRole('button',{name:'确认删除记忆',exact:true}).click();
+    await page.locator('.memory-row').filter({hasText:'使用中文并保持简短'}).getByRole('checkbox').check();await page.getByRole('button',{name:'删除所选记忆',exact:true}).click();await page.getByRole('button',{name:'确认删除记忆',exact:true}).click();
     await page.getByText('使用中文并保持简短',{exact:true}).waitFor({state:'detached'});assert.equal(memories.length,2);
     await page.locator('.memory-settings').screenshot({path:`layout-screenshots/${width}-memory-management.png`});
     if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
@@ -72,7 +73,8 @@ try{
     await page.getByRole('button',{name:'暂停',exact:true}).click();await page.getByText('已暂停',{exact:false}).waitFor();
     await page.locator('.chat-input textarea').fill('第二个任务');await page.getByRole('button',{name:'加入队列',exact:true}).click();
     await page.locator('.queue-item').filter({hasText:'第二个任务'}).waitFor();
-    await page.getByRole('button',{name:'编辑排队消息',exact:true}).click();await page.getByRole('textbox',{name:'编辑排队消息',exact:true}).fill('修改后的任务');await page.getByRole('button',{name:'保存排队消息',exact:true}).click();
+    await page.getByRole('button',{name:'取回排队消息 1',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.chat-input textarea').value==='第二个任务');
+    await page.locator('.chat-input textarea').fill('修改后的任务');await page.getByRole('button',{name:'加入队列',exact:true}).click();
     await page.locator('.queue-item').filter({hasText:'修改后的任务'}).waitFor();
     await page.screenshot({path:`layout-screenshots/${width}-paused-queue-command.png`});
     await page.getByRole('button',{name:'取消排队',exact:true}).click();await page.locator('.queue-panel').waitFor({state:'detached'});

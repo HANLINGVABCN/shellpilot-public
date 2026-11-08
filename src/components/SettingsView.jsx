@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { fileToBase64 } from '../binary.js';
 import MemorySettings from './MemorySettings.jsx';
+import {WorkspaceSettings} from './WorkspacePanel.jsx';
 
 const rand = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
 
@@ -480,6 +481,7 @@ export default function SettingsView() {
         </div>
       </div>
 
+      <WorkspaceSettings/>
       <div className="sec-title">数据导入 / 导出</div>
       <div className="tip-line">配置文件加密导出后可在任意设备导入。导入前会先解析文件，弹窗让你勾选要导入哪些机器、哪些服务商。</div>
       <div className="card">

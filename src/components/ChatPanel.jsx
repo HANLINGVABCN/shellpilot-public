@@ -6,6 +6,8 @@ import { api } from '../api.js';
 import { reconcileScope, sameScope } from '../scope.js';
 import ToolCard from './ToolCard.jsx';
 import ResizableChatInput from './ResizableChatInput.jsx';
+import ReplyStats from './ReplyStats.jsx';
+import WorkspacePanel,{workspaceSupported} from './WorkspacePanel.jsx';
 
 function UserMessage({ text }) {
   const [expanded, setExpanded] = useState(false);
@@ -50,6 +52,7 @@ function storedToDisplay(messages) {
       out.push({ role: 'user', text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) });
     } else if (m.role === 'assistant') {
       const ai = ensureAi();
+      if(m.stats)ai.stats=m.stats;
       const reasoning = m.reasoning_content || m.reasoning;
       if (reasoning) {
         ai.parts.push({ type: 'reasoning', text: reasoning });
@@ -112,6 +115,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [input, setInput] = useState('');
   const [modelName, setModelName] = useState('');
   const [noModel, setNoModel] = useState(false);
+  const [workspaceOpen,setWorkspaceOpen]=useState(false);
   const [modelMenu, setModelMenu] = useState(false);
   const [models, setModels] = useState([]);
   const [mode, setMode] = useState(() => localStorage.getItem('shellpilot-mode') || 'ask');
@@ -130,7 +134,9 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [toolReqs, setToolReqs] = useState([]);
   const toolReq = toolReqs[0];
   const [progress, setProgress] = useState(null);
-  const [tokens, setTokens] = useState(0);
+  const streamActive=useRef(false);
+  const [takingQueue,setTakingQueue]=useState(null);
+  const editorRef=useRef(null);
   const [scope, setScope] = useState(() => {
     try { const saved = JSON.parse(localStorage.getItem('shellpilot-agent-scope') || 'null'); return Array.isArray(saved) ? saved : null; } catch { return null; }
   }); // null = 未初始化；[] = 明确取消勾选
@@ -143,7 +149,12 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [queueEditing,setQueueEditing]=useState(null),[memoryNote,setMemoryNote]=useState('');
   const [queueError,setQueueError]=useState('');
   const jobStateRef=useRef({busy:false,paused:false,queue:[]});
-  const applyJobState=(state)=>{jobStateRef.current=state;setBusy(!!state.busy);setPaused(!!state.paused);setPauseReady(!!state.pauseReady);setQueue(state.queue||[]);};
+  const applyJobState=(state)=>{
+    if(state.revision && jobStateRef.current.revision && state.revision<jobStateRef.current.revision)return;
+    jobStateRef.current=state;
+    setBusy(!!state.busy||!!state.activeId||streamActive.current);
+    setPaused(!!state.paused);setPauseReady(!!state.pauseReady);setQueue(state.queue||[]);
+  };
   const listRef = useRef(null);
   const followBottomRef = useRef(true);
   const lastScrollTopRef = useRef(0);
@@ -190,6 +201,8 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   useEffect(() => { loadModels(); loadChats(); }, []);
   useEffect(() => {
     const restore = () => api('/agent/status').then((status) => {
+      jobStateRef.current={...jobStateRef.current,revision:0};
+      streamActive.current=!!status.busy||!!status.activeId;
       applyJobState(status);
       if ((status.busy || status.queue?.length) && status.chatId) {
         setChatId(status.chatId);
@@ -241,7 +254,8 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
     const offs = [
       ws.on('chat-start', (message) => {
         setBusy(true);
-        setTokens(0);
+        streamActive.current=true;
+        jobStateRef.current={...jobStateRef.current,busy:true};
         setMsgs((prev) => {
           const next = [...prev];
           if(message.text)next.push({role:'user',text:message.text});
@@ -253,6 +267,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
       }),
       // 推理/思考流式片段
       ws.on('chat-reasoning-delta', (m) => {
+        streamActive.current=true;
         setBusy(true);
         setMsgs((prev) => {
           const next = [...prev];
@@ -274,6 +289,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
       }),
       // 流式文字：追加到最后的文字片段，保持真实顺序
       ws.on('chat-delta', (m) => {
+        streamActive.current=true;
         setBusy(true);
         setMsgs((prev) => {
           const next = [...prev];
@@ -295,6 +311,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
       }),
       // 工具卡片：作为新片段插入到当前流式位置
       ws.on('chat-tool-start', (m) => {
+        streamActive.current=true;
         setBusy(true);
         setMsgs((prev) => {
           const next = [...prev];
@@ -326,29 +343,35 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
         });
       }),
       ws.on('chat-done', (m) => {
+        streamActive.current=false;
+        setBusy(!!jobStateRef.current.activeId||!!jobStateRef.current.busy);
         setProgress(null);
         setToolReqs((items) => items.filter((item) => item.source !== 'ai'));
         setMsgs((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
           if (last && last.role === 'assistant' && last.streaming) {
-            next[next.length - 1] = { ...last, streaming: false, error: m.error || null };
+            next[next.length - 1] = { ...last, streaming: false, error: m.error || null,stats:m.stats };
           } else if (m.error) {
-            next.push({ role: 'assistant', streaming: false, parts: [], error: m.error });
+            next.push({ role: 'assistant', streaming: false, parts: [], error: m.error,stats:m.stats });
           }
           return next;
         });
       }),
-      ws.on('chat-cleared', () => { setBusy(false); setMsgs([]); setChatId(null); setChatTitle('新对话'); }),
+      ws.on('chat-cleared', () => { streamActive.current=false;setBusy(false); setMsgs([]); setChatId(null); setChatTitle('新对话'); }),
       ws.on('tool-request', (m) => {
         setToolReqs((items) => [...items.filter((item) => item.reqId !== m.reqId), m]);
       }),
       ws.on('tool-request-expired', (m) => setToolReqs((items) => items.filter((item) => item.reqId !== m.reqId))),
       ws.on('chat-progress', setProgress),
       ws.on('chat-job-state',applyJobState),
-      ws.on('error',(message)=>{if(message.requestType?.startsWith('chat-'))setQueueError(message.message);}),
-      ws.on('memory-saved',(message)=>{setMemoryNote(`已记住：${message.memory.topic}`);setTimeout(()=>setMemoryNote(''),5000);}),
-      ws.on('chat-usage', (m) => setTokens((total) => total + (m.usage.total_tokens || 0))),
+      ws.on('error',(message)=>{if(message.requestType?.startsWith('chat-')){setQueueError(message.message);setTakingQueue(null);}}),
+      ws.on("memory-saved",message=>{setMemoryNote("已记住："+message.memory.content);setTimeout(()=>setMemoryNote(""),5000);}),
+      ws.on('chat-queue-taken',message=>{
+        setInput(previous=>previous.trim()?previous+'\n'+message.text:message.text);
+        setTakingQueue(null);
+        requestAnimationFrame(()=>editorRef.current?.focus());
+      }),
       ws.on('chat-rejected', (m) => setMsgs((items) => [...items, {role:'assistant',parts:[],error:m.error}])),
       ws.on('chat-ai-judging', (m) => {
         // 审批中状态直接标在 run 卡上
@@ -583,7 +606,8 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
 
       {(busy || paused || queue.length>0) && <div className="task-progress"><span>{paused?(pauseReady?'已暂停':'完成当前操作后暂停'):progress?.phase==='tools'?`执行工具（${progress.tools||1}）`:'思考与生成'}{progress && (progress.maxSteps ? ` · ${progress.step}/${progress.maxSteps} 轮` : ` · 第 ${progress.step} 轮`)}</span><div className="queue-actions"><button className="btn btn-sm" onClick={()=>ws.send({type:paused?'chat-resume':'chat-pause'})}>{paused?'继续':'暂停'}</button>{busy && <button className="btn btn-sm danger" onClick={() => ws.send({type:'chat-stop'})}>停止当前任务</button>}</div></div>}
       {memoryNote && <div className="memory-note" role="status">{memoryNote}</div>}
-      {!busy && tokens > 0 && <div className="task-progress">本次用量 {tokens.toLocaleString()} tokens</div>}
+
+      {workspaceOpen&&<WorkspacePanel onClose={()=>setWorkspaceOpen(false)} onSettings={onOpenSettings}/>}
       <div className="chat-history"><div className="chat-list" ref={listRef} onScroll={onListScroll}
         onWheel={(event)=>{if(event.deltaY<0)setFollowBottom(false);}}
         onTouchStart={(event)=>{touchY.current=event.touches[0]?.clientY;}}
@@ -632,6 +656,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
                 </div>
               )}
               {m.error && <div className="chat-err">⚠️ {m.error}</div>}
+              {!m.streaming&&<ReplyStats stats={m.stats}/>}
             </div>
           )
         )}
@@ -639,7 +664,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
 
       {readingHistory && <button className="chat-jump-latest" aria-label="滚到最新消息" onClick={scrollToLatest}><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v15M6 13l6 6 6-6"/></svg></button>}</div>
       {queueError && <div className="queue-panel"><div className="form-err" role="alert">{queueError}</div><button className="btn btn-sm" onClick={()=>setQueueError('')}>知道了</button></div>}
-      {queue.length>0 && <div className="queue-panel"><div className="queue-heading"><span>排队消息（{queue.length}）</span><button className="btn btn-sm" onClick={()=>ws.send({type:'chat-queue-clear'})}>清空队列</button></div>{queue.map((job,index)=><div className="queue-item" key={job.id}>{queueEditing?.id===job.id?<><textarea aria-label="编辑排队消息" value={queueEditing.text} onChange={(event)=>setQueueEditing({...queueEditing,text:event.target.value})}/><div className="queue-actions"><button className="btn btn-sm" onClick={()=>setQueueEditing(null)}>取消编辑消息</button><button className="btn btn-sm primary" disabled={!queueEditing.text.trim()} onClick={()=>{ws.send({type:'chat-queue-edit',jobId:job.id,text:queueEditing.text});setQueueEditing(null);}}>保存排队消息</button></div></>:<><p>{index+1}. {job.text}</p><div className="queue-actions"><button className="btn btn-sm" onClick={()=>setQueueEditing({...job})}>编辑排队消息</button><button className="btn btn-sm danger" onClick={()=>ws.send({type:'chat-queue-remove',jobId:job.id})}>取消排队</button></div></>}</div>)}</div>}
+      {queue.length>0 && <div className="queue-panel"><div className="queue-heading"><span>排队消息（{queue.length}）</span><button className="btn btn-sm" onClick={()=>ws.send({type:"chat-queue-clear"})}>清空队列</button></div>{queue.map((job,index)=><div className="queue-item" key={job.id}><button className="queue-message" aria-label={"取回排队消息 "+(index+1)} disabled={!!takingQueue} onClick={()=>{setTakingQueue(job.id);ws.send({type:"chat-queue-take",jobId:job.id});}}>{index+1}. {job.text}</button><button className="queue-remove" title="取消排队" aria-label="取消排队" onClick={()=>ws.send({type:"chat-queue-remove",jobId:job.id})}>×</button></div>)}</div>}
       {toolReq && (
         <div className="approval-bar">
           <div className="ab-row">
@@ -680,6 +705,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
 
       <div className="chat-input">
         <ResizableChatInput
+          inputRef={editorRef}
           value={input}
           placeholder={hosts.length === 0 ? '先在左侧添加一台服务器' : scopeCount === 0 ? '先在下方「机器」里勾选 AI 能操作的服务器' : '输入任务，回车发送…'}
           onChange={(e) => setInput(e.target.value)}
@@ -708,6 +734,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
             )}
           </div>
           <div className="ca-right">
+            {workspaceSupported()&&<button className={'btn btn-sm'+(workspaceOpen?' on':'')} onClick={()=>setWorkspaceOpen(value=>!value)}>工作区</button>}
             <div className="effort-wrap">
               <button className="btn btn-sm mode-btn" title="思考深度 — 参数会按模型自动翻译，不支持时自动忽略，不会报错" onClick={() => setEffortMenu(!effortMenu)}>
                 思考·{curEffort.label}

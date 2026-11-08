@@ -65,6 +65,10 @@ impl ToolContext {
     }
 
     pub async fn call(&self, name: &str, args: &Value) -> Result<Value, String> {
+        if name.starts_with("workspace_"){
+            if self.source!="ai"{return Err("工作区目前只供本机应用协作，未授权给外部MCP".into());}
+            return crate::workspace::call(&self.st,name,args).await;
+        }
         match name {
             "vps_list" => {
                 let hosts = self.st.hosts.read().await;
