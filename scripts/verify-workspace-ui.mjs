@@ -22,9 +22,9 @@ try{
  });
  await page.goto('http://127.0.0.1:4173');
  await page.getByRole('button',{name:'选择目录',exact:true}).click();
- assert.equal(await page.getByLabel('工作区目录').inputValue(),'C:\\Workspace\\Demo');
+ await page.waitForFunction(()=>document.querySelector('[aria-label="工作区目录"]').value==='C:\\Workspace\\Demo');
  await page.getByLabel('启用工作区',{exact:true}).check();
- await page.getByRole('button',{name:'保存工作区',exact:true}).click();
+ await Promise.all([page.waitForResponse(r=>r.url().endsWith('/api/workspace')&&r.request().method()==='PUT'),page.getByRole('button',{name:'保存工作区',exact:true}).click()]);
  await page.getByRole('button',{name:'工作区',exact:true}).click();
  await page.getByRole('button',{name:'📄 input.txt',exact:true}).click();
  await page.getByLabel('工作区文件内容').fill('user and AI collaborate');
