@@ -5,11 +5,11 @@ on:
       build_run:
         description: 'Successful Windows and Android build run ID'
         required: true
-        default: '42248892785'
+        default: '42534567176'
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261107'
+        default: 'build-20261109-ai-workspace'
       title:
         description: 'Release title'
         required: true
@@ -81,13 +81,20 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot 数据保留修复：读取本机文件失败时不再使用空数据，也不允许默认配置覆盖原文件。
+          ShellPilot：改进 AI 排队、回答统计、简洁记忆与本机工作区。
 
-          改进安装后的当前用户启动方式，保存使用临时文件和原子替换；真实数据错误在页面内处理，重新读取后恢复服务器和对话。
+          - 输出中发送消息进入队列，暂停和停止按钮保持可用；点击排队消息取回主输入框，保留原草稿，已经开始的任务不会重复执行。未保存偏好的新对话默认完全托管，切换模式不弹浏览器确认。
+          - 回答底部使用小字显示年月日时间、输入（缓存命中）、输出、时长、tok/s 与服务商/模型。完整数字每三位加英文逗号，字段间仅用空格，统计随历史保存；用量缺失显示 —。
+          - 记忆保留检索筛选，取消必填主题，改为独立滚动的单行勾选、编辑和启停列表，支持批量删除。自动保存开关不影响已有启用记忆。
+          - Windows 配置页可选择本机工作区，AI 可以读写文件、上传下载和运行 PowerShell。命令使用 AppContainer，联网独立控制；停止、超时和停用结束相关进程。
 
-          已检查数据损坏、文件访问失败与恢复，并验证连续覆盖安装保留服务器、模型、对话和记忆。原数据目录不变，APK 沿用固定 ShellPilot 签名。
+          统计示例：`2026-11-09 03:20 ↑1,200（800） ↓300 12s 25tok/s Provider/Model`
 
-          聊天仍只保留侧边向下箭头。公开 ShellPilot 不包含域名转发模块。
+          [实际 Windows 隔离及回归验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42534563738)已通过：工作区内读写和命令产出、外部私人文件与目录联接拒绝、上传下载、哈希冲突、超时及停用回收；聊天、记忆、终端阅读、AI/MCP 和数据恢复检查通过。安装器另有连续覆盖安装检查。
+
+          原数据目录保留，Android 沿用固定 ShellPilot 签名。工作区第一版用于 Windows，Android 保留现有功能。外部 MCP 暂不取得本机工作区权限；工作区的范围与用法见 [说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。
+
+          聊天阅读仍只显示侧边向下箭头。
 
           Windows 安装使用 ShellPilot-Windows-Setup.exe；便携更新替换 shellpilot-app.exe；Android 使用 ShellPilot-arm64.apk。
 
