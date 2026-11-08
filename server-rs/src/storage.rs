@@ -6,7 +6,7 @@ fn unavailable()->Response{
     (StatusCode::SERVICE_UNAVAILABLE,Json(json!({"storageError":true,"error":crate::storage_fault().unwrap_or("读取本机数据失败".into())}))).into_response()
 }
 pub async fn status()->Json<Value>{
-    Json(json!({"error":crate::storage_fault(),"directory":crate::data_dir().to_string_lossy(),"observation":crate::storage_observation()}))
+    Json(json!({"error":crate::storage_fault(),"directory":crate::data_dir().to_string_lossy()}))
 }
 pub async fn retry(State(st):State<Arc<crate::AppState>>)->Response{
     let _lock=RELOAD.lock().await;

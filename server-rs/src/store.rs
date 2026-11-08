@@ -56,37 +56,6 @@ pub fn validate_storage()->Result<(),String> {
     check
 }
 
-/// Local diagnostics return counts and OS errors, never credentials or contents.
-pub fn storage_observation()->Value{
-    let dir=data_dir();
-    let files=["hosts.json","settings.json","chats.json","memories.json","runtime.json"].into_iter().map(|name|{
-        let path=dir.join(name);
-        let metadata=std::fs::metadata(&path);
-        let raw=std::fs::read(&path);
-        let mut value=json!({"name":name,"path":path.to_string_lossy(),
-            "metadataBytes":metadata.as_ref().ok().map(|m|m.len()),
-            "metadataError":metadata.as_ref().err().map(|e|json!({"code":e.raw_os_error(),"message":e.to_string()}))});
-        match raw{
-            Ok(bytes)=>{
-                use sha2::{Digest,Sha256};
-                value["readBytes"]=json!(bytes.len());value["sha256"]=json!(format!("{:x}",Sha256::digest(&bytes)));
-                let parsed=std::str::from_utf8(&bytes).map_err(|e|e.to_string()).and_then(|text|serde_json::from_str::<Value>(text.trim_start_matches('\u{feff}')).map_err(|e|e.to_string()));
-                match parsed{
-                    Ok(data)=>{
-                        value["recordCount"]=json!(data.as_array().map(Vec::len).or_else(||data.as_object().map(|o|o.len())));
-                        if name=="settings.json"{value["providers"]=json!(data["providers"].as_array().map(Vec::len));value["models"]=json!(data["models"].as_array().map(Vec::len));}
-                    },
-                    Err(error)=>value["parseError"]=json!(error),
-                }
-            },
-            Err(error)=>value["readError"]=json!({"code":error.raw_os_error(),"message":error.to_string()}),
-        }
-        value
-    }).collect::<Vec<_>>();
-    let listed=std::fs::read_dir(&dir).map(|entries|entries.filter_map(Result::ok).map(|e|e.file_name().to_string_lossy().to_string()).collect::<Vec<_>>());
-    json!({"files":files,"listedFiles":listed.as_ref().ok(),"listError":listed.as_ref().err().map(|e|e.to_string()),"workingDirectory":std::env::current_dir().ok().map(|p|p.to_string_lossy().to_string()),"processId":std::process::id(),"executable":std::env::current_exe().ok().map(|p|p.to_string_lossy().to_string())})
-}
-
 pub fn init_data_dir(dir: PathBuf) {
     if let Err(error)=std::fs::create_dir_all(&dir){storage_failed(format!("无法创建数据目录：{error}"));}
     let _ = DATA_DIR.set(dir);
