@@ -41,6 +41,7 @@ pub fn friendly_fetch_error(e: &reqwest::Error) -> String {
 // ---------- 思考深度：各模型接口的参数方言自动翻译 ----------
 static UNSUPPORTED_THINKING: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+static UNSUPPORTED_USAGE:LazyLock<Mutex<HashSet<String>>>=LazyLock::new(||Mutex::new(HashSet::new()));
 
 /// Node: buildThinkingParams
 pub fn build_thinking_params(model: &str, effort: &str) -> Value {
@@ -96,6 +97,7 @@ fn http_client() -> reqwest::Client {
 }
 
 pub struct StreamOpts {
+    pub pause:Option<std::sync::Arc<crate::AppState>>,
     pub base_url: String,
     pub api_key: Option<String>,
     pub model: String,
@@ -175,6 +177,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
             }
         }
         body["stream"] = json!(true);
+        if !UNSUPPORTED_USAGE.lock().unwrap().contains(&cache_key){body["stream_options"]=json!({"include_usage":true});}
         let url = url.clone();
         let headers = headers.clone();
         let client = client.clone();
@@ -195,11 +198,15 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
     }
     let mut res: Option<reqwest::Response> = Some(do_fetch(&Value::Object(extra)).await?);
 
-    if !res.as_ref().unwrap().status().is_success() && !active_keys.is_empty() {
+    for _attempt in 0..3 {
+      if res.as_ref().unwrap().status().is_success(){break;}
         let r = res.take().unwrap();
         let status = r.status();
         let err_text = r.text().await.unwrap_or_default();
-        if mentions_any_param(&err_text, &active_keys) {
+        if err_text.contains("stream_options")||err_text.contains("include_usage"){
+            UNSUPPORTED_USAGE.lock().unwrap().insert(cache_key.clone());
+            res=Some(do_fetch(&Value::Object(extra.clone())).await?);
+        }else if !active_keys.is_empty() && mentions_any_param(&err_text, &active_keys) {
             // 接口明确不认识这个思考参数：记入黑名单，之后该模型不再携带
             {
                 let mut bl = UNSUPPORTED_THINKING.lock().unwrap();
@@ -208,7 +215,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
                 }
             }
             res = Some(do_fetch(&json!({})).await?);
-        } else if is_generic_unknown_param_error(&err_text) {
+        } else if !active_keys.is_empty() && is_generic_unknown_param_error(&err_text) {
             // 泛化的"未知参数"错误：本次去掉思考参数重试，但不拉黑
             res = Some(do_fetch(&json!({})).await?);
         } else {
@@ -236,7 +243,13 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
     use futures_util::StreamExt;
     let mut stream = res.bytes_stream();
     let mut pending: Vec<u8> = Vec::new();
+    let mut paused_ms=0u64;
     loop {
+        if let Some(st)=&opts.pause{
+            let before=std::time::Instant::now();
+            crate::jobs::checkpoint(st).await?;
+            if first_output.is_some(){paused_ms=paused_ms.saturating_add(before.elapsed().as_millis() as u64);}
+        }
         let chunk = match stream.next().await {
             Some(Ok(b)) => b,
             Some(Err(e)) => return Err(friendly_fetch_error(&e)),
@@ -270,7 +283,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
         }
     }
     if out.content.is_empty() && out.tool_calls.is_empty() { return Err("模型没有返回正文或工具调用，请检查模型是否支持当前请求".into()); }
-    out.generation_ms=first_output.unwrap_or(stream_started).elapsed().as_millis().max(1) as u64;
+    out.generation_ms=(first_output.unwrap_or(stream_started).elapsed().as_millis() as u64).saturating_sub(paused_ms).max(1);
     Ok(out)
 }
 
@@ -436,7 +449,7 @@ mod tests {
             let _=socket.read(&mut request).await;
             socket.write_all(response.as_bytes()).await.unwrap();
         });
-        chat_completion_stream(StreamOpts {base_url:format!("http://{address}"),api_key:None,model:"test".into(),messages:json!([]),tools:None,
+        chat_completion_stream(StreamOpts {pause:None,base_url:format!("http://{address}"),api_key:None,model:"test".into(),messages:json!([]),tools:None,
             temperature:None,max_tokens:None,reasoning_effort:None,on_reasoning:None,on_delta:None}).await
     }
     #[tokio::test]

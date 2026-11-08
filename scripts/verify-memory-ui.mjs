@@ -45,8 +45,8 @@ try{
     await page.goto('http://127.0.0.1:4173');
     await Promise.all([page.waitForResponse((response)=>response.url().endsWith('/api/settings')&&response.request().method()==='PUT'),page.getByRole('checkbox',{name:'允许 AI 主动记住新内容',exact:true}).uncheck()]);
     assert.equal(settings.autoMemory,false);assert(memories[0].enabled,'Auto off cannot disable existing memory');
-    await Promise.all([page.waitForResponse((response)=>response.url().endsWith('/api/memories/one')&&response.request().method()==='PUT'),page.getByRole('checkbox',{name:'参与回答 回答方式',exact:true}).click()]);
-    await page.getByRole('checkbox',{name:'参与回答 回答方式',exact:true}).waitFor({state:'detached'});
+    await Promise.all([page.waitForResponse((response)=>response.url().endsWith('/api/memories/one')&&response.request().method()==='PUT'),page.getByRole('button',{name:'参与回答 1',exact:true}).click()]);
+    await page.locator('.memory-row').filter({hasText:'解释时使用简单的话'}).waitFor({state:'detached'});
     await page.getByRole('combobox',{name:'记忆筛选',exact:true}).selectOption('disabled');
     await page.getByText('解释时使用简单的话',{exact:true}).waitFor();
     await page.getByRole('button',{name:'添加记忆',exact:true}).click();

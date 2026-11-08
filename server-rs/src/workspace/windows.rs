@@ -1,5 +1,16 @@
 use std::path::Path;
 use serde_json::{Value,json};
+pub struct DirectoryLease{
+ #[cfg(windows)]_handles:Vec<native::DirectoryHandle>,
+}
+pub fn hold_directory(root:&Path,directory:&Path)->Result<DirectoryLease,String>{
+ #[cfg(windows)]{Ok(DirectoryLease{_handles:native::hold_directory(root,directory)?})}
+ #[cfg(not(windows))]{let _=(root,directory);Ok(DirectoryLease{})}
+}
+pub fn read_file(path:&Path)->Result<std::fs::File,String>{
+ #[cfg(windows)]{native::read_file(path)}
+ #[cfg(not(windows))]{std::fs::File::open(path).map_err(|e|e.to_string())}
+}
 pub fn prepare(root:&Path)->Result<(),String>{
  #[cfg(windows)]{native::prepare(root)}
  #[cfg(not(windows))]{let _=root;Err("隔离命令执行目前仅支持Windows".into())}
@@ -67,6 +78,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  #[repr(C)]struct BasicLimits{process_time:i64,job_time:i64,flags:u32,min_working:usize,max_working:usize,active:u32,affinity:usize,priority:u32,scheduling:u32}
  #[repr(C)]struct IoCounters{read_ops:u64,write_ops:u64,other_ops:u64,read_bytes:u64,write_bytes:u64,other_bytes:u64}
  #[repr(C)]struct ExtendedLimits{basic:BasicLimits,io:IoCounters,process_memory:usize,job_memory:usize,peak_process:usize,peak_job:usize}
+ #[repr(C)]struct FileInfo{attributes:u32,created:[u32;2],accessed:[u32;2],written:[u32;2],volume:u32,size_high:u32,size_low:u32,links:u32,index_high:u32,index_low:u32}
  #[link(name="kernel32")]extern "system"{
   fn CloseHandle(handle:Handle)->i32;
   fn CreatePipe(read:*mut Handle,write:*mut Handle,attributes:*const SecurityAttributes,size:u32)->i32;
@@ -82,6 +94,8 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn SetInformationJobObject(job:Handle,class:u32,info:*const c_void,size:u32)->i32;
   fn AssignProcessToJobObject(job:Handle,process:Handle)->i32;
   fn TerminateJobObject(job:Handle,code:u32)->i32;
+  fn CreateFileW(path:*const u16,access:u32,sharing:u32,attributes:*const SecurityAttributes,disposition:u32,flags:u32,template:Handle)->Handle;
+  fn GetFileInformationByHandle(handle:Handle,info:*mut FileInfo)->i32;
  }
  #[link(name="userenv")]extern "system"{
   fn CreateAppContainerProfile(name:*const u16,display:*const u16,description:*const u16,capabilities:*const SidAttributes,count:u32,sid:*mut Sid)->i32;
@@ -130,6 +144,31 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  }
  struct HandleGuard(Handle);
  impl Drop for HandleGuard{fn drop(&mut self){if self.0!=0{unsafe{CloseHandle(self.0);}}}}
+ pub struct DirectoryHandle(HandleGuard);unsafe impl Send for DirectoryHandle{}
+ pub fn hold_directory(root:&Path,directory:&Path)->Result<Vec<DirectoryHandle>,String>{
+  if !directory.starts_with(root){return Err("目录超出工作区".into());}
+  let relative=directory.strip_prefix(root).map_err(|e|e.to_string())?;
+  let mut paths=vec![root.to_path_buf()];let mut p=root.to_path_buf();
+  for part in relative.components(){p.push(part.as_os_str());paths.push(p.clone());}
+  let mut guards=Vec::new();
+  for path in paths{
+   let raw=unsafe{CreateFileW(wide(path.as_os_str()).as_ptr(),0x80,1,null(),3,0x02000000|0x00200000,0)};
+   if raw==-1{return Err(error("工作区目录正在被修改或不可访问"));}
+   let handle=HandleGuard(raw);let mut info:FileInfo=unsafe{zeroed()};
+   checked(unsafe{GetFileInformationByHandle(raw,&mut info)},"工作区目录检查失败")?;
+   if info.attributes&0x400!=0||info.attributes&0x10==0{return Err("不允许通过目录联接越过工作区".into());}
+   guards.push(DirectoryHandle(handle));
+  }
+  Ok(guards)
+ }
+ pub fn read_file(path:&Path)->Result<std::fs::File,String>{
+  let raw=unsafe{CreateFileW(wide(path.as_os_str()).as_ptr(),0x80000000,1,null(),3,0x00200000,0)};
+  if raw==-1{return Err(error("工作区文件读取失败"));}
+  let mut handle=HandleGuard(raw);let mut info:FileInfo=unsafe{zeroed()};
+  checked(unsafe{GetFileInformationByHandle(raw,&mut info)},"工作区文件检查失败")?;
+  if info.attributes&0x400!=0||info.attributes&0x10!=0||info.links>1{return Err("不能读取工作区中的链接文件".into());}
+  let file=unsafe{std::fs::File::from_raw_handle(raw as *mut c_void)};handle.0=0;Ok(file)
+ }
  struct Attributes{buffer:Vec<usize>,pointer:*mut c_void}
  impl Drop for Attributes{fn drop(&mut self){unsafe{DeleteProcThreadAttributeList(self.pointer);}}}
  fn attributes()->Result<Attributes,String>{
@@ -171,7 +210,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   checked(unsafe{UpdateProcThreadAttribute(attributes.pointer,0,0x00020002,inherited.as_mut_ptr().cast(),size_of_val(&inherited),null_mut(),null_mut())},"管道隔离设置失败")?;
   let job=HandleGuard(unsafe{CreateJobObjectW(null(),null())});
   if job.0==0{return Err(error("命令进程组创建失败"));}
-  let mut limits:ExtendedLimits=unsafe{zeroed()};limits.basic.flags=0x00002000|0x00000008|0x00000200;limits.basic.active=32;limits.process_memory=2*1024*1024*1024;
+  let mut limits:ExtendedLimits=unsafe{zeroed()};limits.basic.flags=0x00002000|0x00000008|0x00000100;limits.basic.active=32;limits.process_memory=2*1024*1024*1024;
   checked(unsafe{SetInformationJobObject(job.0,9,(&limits as *const ExtendedLimits).cast(),size_of::<ExtendedLimits>() as u32)},"命令进程限制设置失败")?;
   let mut info:StartupEx=unsafe{zeroed()};info.info.size=size_of::<StartupEx>() as u32;info.info.flags=0x100;info.info.stdin=in_read.0;info.info.stdout=out_write.0;info.info.stderr=err_write.0;info.attributes=attributes.pointer;
   let exe=PathBuf::from(std::env::var_os("SystemRoot").ok_or("Windows目录不可用")?).join("System32/WindowsPowerShell/v1.0/powershell.exe");

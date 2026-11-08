@@ -46,6 +46,10 @@ try{
  await api('/workspace/action','POST',{name:'workspace_read',arguments:{path:'outside-link/private.txt'}},false);
  const linkRead=await execute("Get-Content -LiteralPath './outside-link/private.txt'");
  assert.notEqual(linkRead.exitCode,0);assert(!linkRead.stdout.includes('outside-fixture-must-be-protected'));fs.unlinkSync(junction);
+ const hardlink=path.join(root,'private-hardlink.txt');fs.linkSync(canary,hardlink);
+ await api('/workspace/action','POST',{name:'workspace_read',arguments:{path:'private-hardlink.txt'}},false);
+ await api('/workspace/action','POST',{name:'workspace_write',arguments:{path:'private-hardlink.txt',content:'bad'}},false);
+ fs.unlinkSync(hardlink);assert.equal(fs.readFileSync(canary,'utf8'),'outside-fixture-must-be-protected');
  const form=new FormData();form.append('files',new Blob(['uploaded workspace file']),'upload.txt');
  const upload=await fetch(base+'/api/workspace/upload',{method:'POST',body:form});assert(upload.ok);
  const download=await fetch(base+'/api/workspace/download?path=upload.txt');assert.equal(await download.text(),'uploaded workspace file');

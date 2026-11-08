@@ -84,22 +84,27 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
  match name{
   "workspace_list"=>{
    let dir=resolve(&root,relative,false)?;
+   let _lease=windows::hold_directory(&root,&dir)?;
    let mut entries=Vec::new();
    for entry in std::fs::read_dir(dir).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?;if entry.file_name()==".shellpilot"{continue;}let m=entry.metadata().map_err(|e|e.to_string())?;entries.push(json!({"name":entry.file_name().to_string_lossy(),"directory":m.is_dir(),"size":m.len()}));if entries.len()>=2000{break;}}
    entries.sort_by_key(|e|e["name"].as_str().unwrap_or("").to_lowercase());
    Ok(json!({"path":relative,"entries":entries}))
   },
   "workspace_read"=>{
-   let path=resolve(&root,relative,false)?;let metadata=std::fs::metadata(&path).map_err(|e|e.to_string())?;
+   use std::io::Read;
+   let path=resolve(&root,relative,false)?;let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;
+   let mut file=windows::read_file(&path)?;let metadata=file.metadata().map_err(|e|e.to_string())?;
    if metadata.len()>1024*1024{return Err("文本文件超过1MB，请分块处理或下载".into());}
-   let content=std::fs::read_to_string(&path).map_err(|e|e.to_string())?;
+   let mut content=String::new();file.read_to_string(&mut content).map_err(|e|e.to_string())?;
    Ok(json!({"path":relative,"content":content,"sha256":crate::operations::hash(&content)}))
   },
   "workspace_write"=>{
+   use std::io::Read;
    let path=resolve(&root,relative,true)?;
+   let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;
    let content=args["content"].as_str().ok_or("缺少文件内容")?;
    if content.len()>1024*1024{return Err("单次文本写入最多1MB".into());}
-   let before=if path.exists(){std::fs::read_to_string(&path).map_err(|e|e.to_string())?}else{String::new()};
+   let before=if path.exists(){let mut content=String::new();windows::read_file(&path)?.read_to_string(&mut content).map_err(|e|e.to_string())?;content}else{String::new()};
    let expected=if path.exists(){crate::operations::hash(&before)}else{"missing".into()};
    if args["preview"].as_bool().unwrap_or(false){return Ok(json!({"path":relative,"before":before,"after":content,"expectedHash":expected}));}
    if let Some(hash)=args["expectedHash"].as_str(){if hash!=expected{return Err("文件已变化，请重新读取后再保存".into());}}
@@ -108,9 +113,10 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
    std::fs::rename(&temp,&path).map_err(|e|e.to_string())?;
    Ok(json!({"path":relative,"sha256":crate::operations::hash(content),"written":true}))
   },
-  "workspace_mkdir"=>{let path=resolve(&root,relative,true)?;std::fs::create_dir(&path).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
-  "workspace_delete"=>{let path=resolve(&root,relative,false)?;if path==root{return Err("不能删除工作区根目录".into());}if path.is_dir(){std::fs::remove_dir(&path)}else{std::fs::remove_file(&path)}.map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
+  "workspace_mkdir"=>{let path=resolve(&root,relative,true)?;let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;std::fs::create_dir(&path).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
+  "workspace_delete"=>{let path=resolve(&root,relative,false)?;if path==root{return Err("不能删除工作区根目录".into());}let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;if path.is_dir(){std::fs::remove_dir(&path)}else{std::fs::remove_file(&path)}.map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "workspace_exec"=>{
+   reject_links(&root.join(".shellpilot"))?;
    let c=st.workspace.config.lock().await.clone();
    let command=crate::operations::text_arg(args,"command")?.to_string();
    let timeout=args["timeout"].as_u64().unwrap_or(120000).clamp(100,900000);
@@ -142,7 +148,8 @@ pub async fn pick(State(st):State<Arc<crate::AppState>>)->Response{
 pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{
  let root=match st.workspace.root().await{Ok(root)=>root,Err(e)=>return result(Err(e))};
  let path=match resolve(&root,args.get("path").map(String::as_str).unwrap_or(""),false){Ok(path)=>path,Err(e)=>return result(Err(e))};
- let file=match tokio::fs::File::open(&path).await{Ok(file)=>file,Err(e)=>return result(Err(e.to_string()))};
+ let _lease=match windows::hold_directory(&root,path.parent().unwrap_or(&root)){Ok(lease)=>lease,Err(e)=>return result(Err(e))};
+ let file=match windows::read_file(&path){Ok(file)=>tokio::fs::File::from_std(file),Err(e)=>return result(Err(e))};
  let name=path.file_name().unwrap_or_default().to_string_lossy().replace(['"','\r','\n'],"");
  use futures_util::TryStreamExt;
  let stream=tokio_util::io::ReaderStream::new(file).map_err(std::io::Error::other);
@@ -155,6 +162,7 @@ pub async fn upload(State(st):State<Arc<crate::AppState>>,Query(args):Query<std:
   let root=st.workspace.root().await?;
   let directory=args.get("path").cloned().unwrap_or_default();
   let dir=resolve(&root,&directory,false)?;
+  let _lease=windows::hold_directory(&root,&dir)?;
   if !dir.is_dir(){return Err("上传目标必须是工作区文件夹".into());}
   let mut files=Vec::new();
   while let Some(mut field)=multipart.next_field().await.map_err(|e|e.to_string())?{

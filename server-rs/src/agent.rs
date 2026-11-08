@@ -226,7 +226,7 @@ async fn run_task(ctx:ToolContext,chat_id:&str,user_text:&str,effort:&str,mut me
         request.extend(compact_history(&messages,history_limit,context_chars).into_iter().map(|mut m|{if let Some(o)=m.as_object_mut(){o.remove("stats");}m}));
         ctx.st.broadcast_all(&json!({"type":"chat-progress","step":step,"maxSteps":steps,"phase":"thinking"}));
         let reasoning_st=ctx.st.clone(); let delta_st=ctx.st.clone();
-        let result=chat_completion_stream(StreamOpts {
+        let result=chat_completion_stream(StreamOpts {pause:Some(ctx.st.clone()),
             base_url:provider["baseURL"].as_str().unwrap_or("").into(),api_key:provider["apiKey"].as_str().map(String::from),
             model:model["name"].as_str().unwrap_or("").into(),messages:json!(request),tools:Some(tools(include_workspace)),
             temperature:Some(params["temperature"].as_f64().unwrap_or(0.3)),max_tokens:params["maxTokens"].as_i64().filter(|limit|*limit>0),
@@ -325,7 +325,7 @@ async fn ai_rename_chat(st: &Arc<crate::AppState>, chat_id: &str, first_text: &s
     let model_name = model.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let first: String = first_text.chars().take(500).collect();
 
-    let result = chat_completion_stream(StreamOpts {
+    let result = chat_completion_stream(StreamOpts {pause:None,
         base_url,
         api_key,
         model: model_name,

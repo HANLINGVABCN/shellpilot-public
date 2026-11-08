@@ -113,7 +113,7 @@ pub async fn ai_judge(input: JudgeInput) -> Result<Option<(String, String)>, Str
     let tools: Value = serde_json::from_str(JUDGE_TOOLS).unwrap();
 
     for _round in 0..3 {
-        let result = chat_completion_stream(StreamOpts {
+        let result = chat_completion_stream(StreamOpts {pause:None,
             base_url: base_url.clone(),
             api_key: api_key.clone(),
             model: model_name.clone(),
