@@ -29,7 +29,7 @@ pub async fn configure_inner(st:&Arc<crate::AppState>,mut config:WorkspaceConfig
  let root=validate_root(&path)?;
  config.directory=root.to_string_lossy().to_string();
  let old=st.workspace.config.lock().await.clone();
- if config.enabled {windows::prepare(&root)?;}
+ if config.enabled {if let Err(error)=windows::prepare(&root){let _=windows::release(&root);return Err(error);}}
  if old.enabled && (old.directory!=config.directory||!config.enabled){windows::release(Path::new(&old.directory))?;}
  st.workspace.generation.send_modify(|n|*n+=1);
  crate::save_json("workspace.json",&json!(config));
