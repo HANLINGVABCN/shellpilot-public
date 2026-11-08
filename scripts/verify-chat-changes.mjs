@@ -27,6 +27,7 @@ try{
    await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
   });
   await page.goto('http://127.0.0.1:4173');if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+  assert.equal(await page.locator('.mode-wrap > button').innerText(),'完全托管');
   await page.getByRole('button',{name:'暂停',exact:true}).waitFor();
   socket.send(JSON.stringify({type:'chat-start',chatId:'chat',text:'当前任务'}));
   socket.send(JSON.stringify({type:'chat-delta',delta:'正在输出'}));

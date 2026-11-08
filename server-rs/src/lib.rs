@@ -55,7 +55,7 @@ impl Default for AgentState {
             messages: Vec::new(),
             chat_id: None,
             busy: false,
-            approval_mode: "ask".into(),
+            approval_mode: "full".into(),
             reasoning_effort: "medium".into(),
             scope: Vec::new(),
             allowed: HashSet::new(),

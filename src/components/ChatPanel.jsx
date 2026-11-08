@@ -124,7 +124,10 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   },[]);
   const [modelMenu, setModelMenu] = useState(false);
   const [models, setModels] = useState([]);
-  const [mode, setMode] = useState(() => localStorage.getItem('shellpilot-mode') || 'ask');
+  const [mode, setMode] = useState(() => {
+    const saved=localStorage.getItem('shellpilot-mode');
+    return MODES.some(item=>item.id===saved)?saved:'full';
+  });
   const [modeMenu, setModeMenu] = useState(false);
   const [effort, setEffort] = useState(() => localStorage.getItem('shellpilot-effort') || 'medium');
   const [effortMenu, setEffortMenu] = useState(false);
@@ -478,9 +481,6 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
 
   const pickMode = (m) => {
     setModeMenu(false);
-    if (m.id === 'full' && mode !== 'full') {
-      if (!confirm('「完全托管」：删库、格式化这类高风险命令也不会再询问，直接执行！\n\n确定要开启吗？')) return;
-    }
     setMode(m.id);
     localStorage.setItem('shellpilot-mode', m.id);
   };
@@ -548,7 +548,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
     setToolReqs((items) => items.slice(1));
   };
 
-  const curMode = MODES.find((m) => m.id === mode) || MODES[0];
+  const curMode = MODES.find((m) => m.id === mode) || MODES.find((m) => m.id === 'full');
   const curEffort = EFFORTS.find((e) => e.id === effort) || EFFORTS[3];
   const scopeCount = validScope.length;
   const dotOf = (h) => {
