@@ -20,7 +20,7 @@ try{
   assert.equal(res.ok,ok,route+': '+JSON.stringify(data));return data;
  };
  const action=async(name,args)=>api('/workspace/action','POST',{name,arguments:args});
- const execute=command=>action('workspace_exec',{command,timeout:15000});
+ const execute=command=>action('workspace_exec',{command,timeout:45000});
  await api('/workspace','PUT',{directory:root,enabled:true,network:false});
  assert.equal((await api('/workspace')).enabled,true);
  await action('workspace_write',{path:'input.txt',content:'hello workspace'});

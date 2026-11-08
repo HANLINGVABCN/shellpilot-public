@@ -146,7 +146,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [scopeMenu, setScopeMenu] = useState(false);
   const [busy, setBusy] = useState(false);  // AI 正在输出/执行
   const [paused,setPaused]=useState(false),[pauseReady,setPauseReady]=useState(false),[queue,setQueue]=useState([]);
-  const [queueEditing,setQueueEditing]=useState(null),[memoryNote,setMemoryNote]=useState('');
+  const [memoryNote,setMemoryNote]=useState('');
   const [queueError,setQueueError]=useState('');
   const jobStateRef=useRef({busy:false,paused:false,queue:[]});
   const applyJobState=(state)=>{

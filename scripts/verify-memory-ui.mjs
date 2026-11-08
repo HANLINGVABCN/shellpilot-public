@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
-const browser=await chromium.launch();
+const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 let activePage;
 try{
   for(const width of [390,1040]){

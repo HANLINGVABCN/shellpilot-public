@@ -218,7 +218,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let mut line=w(&format!("\"{}\" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",exe.display(),script.display()));
   // Whitelist the sandbox's environment: no API keys or inherited app tokens.
   let system=std::env::var("SystemRoot").unwrap_or("C:\\Windows".into());
-  let env_strings=[format!("SystemRoot={system}"),format!("WINDIR={system}"),format!("PATH={system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),format!("TEMP={}",internal.display()),format!("TMP={}",internal.display()),format!("USERPROFILE={}",root.display()),format!("APPDATA={}",internal.display()),format!("LOCALAPPDATA={}",internal.display())];
+  let env_strings=[format!("SystemRoot={system}"),format!("WINDIR={system}"),format!("PATH={system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),format!("PSModulePath={system}\\System32\\WindowsPowerShell\\v1.0\\Modules"),format!("PSModuleAnalysisCachePath={}",internal.join("ModuleAnalysisCache").display()),format!("TEMP={}",internal.display()),format!("TMP={}",internal.display()),format!("USERPROFILE={}",root.display()),format!("APPDATA={}",internal.display()),format!("LOCALAPPDATA={}",internal.display())];
   let mut env_strings=env_strings.to_vec();env_strings.sort_by_key(|s|s.to_ascii_uppercase());
   let environment:Vec<u16>=env_strings.join("\0").encode_utf16().chain([0,0]).collect();
   let mut pi:ProcessInfo=unsafe{zeroed()};

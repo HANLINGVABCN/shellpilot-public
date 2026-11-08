@@ -255,6 +255,11 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
             Some(Err(e)) => return Err(friendly_fetch_error(&e)),
             None => break,
         };
+        if let Some(st)=&opts.pause{
+            let before=std::time::Instant::now();
+            crate::jobs::checkpoint(st).await?;
+            if first_output.is_some(){paused_ms=paused_ms.saturating_add(before.elapsed().as_millis() as u64);}
+        }
         pending.extend_from_slice(&chunk);
         if pending.len()>2*1024*1024 || out.content.len()+out.reasoning.len()>2*1024*1024 {
             return Err("模型响应超过大小上限，本轮工具未执行".into());
