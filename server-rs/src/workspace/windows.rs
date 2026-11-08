@@ -147,7 +147,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let out=std::process::Command::new("icacls.exe").arg(root).arg("/grant").arg(format!("*{id}:(OI)(CI)M")).arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
   if !out.status.success(){return Err("无法授予沙箱工作区权限，请选择你能修改权限的文件夹".into());}
   for path in ancestor_paths(root){
-   let _=std::process::Command::new("icacls.exe").arg(path).arg("/grant").arg(format!("*{id}:(X,RA,RC,S)")).arg("/Q").creation_flags(0x08000000).output();
+   let _=std::process::Command::new("icacls.exe").arg(path).arg("/grant").arg(format!("*{id}:(RX)")).arg("/Q").creation_flags(0x08000000).output();
   }
   let low=std::process::Command::new("icacls.exe").arg(root).arg("/setintegritylevel").arg("(OI)(CI)L").arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
   if !low.status.success(){return Err("无法设置工作区的隔离运行权限".into());}
