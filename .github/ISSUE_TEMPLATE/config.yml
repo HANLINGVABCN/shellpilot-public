@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 使用说明与常见问题
+    url: https://github.com/HANLINGVABCN/shellpilot-public/blob/main/使用说明.md
+    about: 安装、连接、模型、指纹和升级问题
+  - name: MCP 接入说明
+    url: https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/MCP.md
+    about: 配置格式、工具、权限与排查
+  - name: 敏感信息与安全问题
+    url: https://github.com/HANLINGVABCN/shellpilot-public/blob/main/SECURITY.md
+    about: 不要在公开 Issue 提交凭据或漏洞利用细节

@@ -1,0 +1,201 @@
+name: build-preview
+on:
+  workflow_dispatch:
+    inputs:
+      android_run:
+        description: 'Optional successful Android job run to reuse without rebuilding'
+        required: false
+        default: ''
+permissions:
+  contents: read
+  actions: read
+jobs:
+  android-reuse:
+    if: inputs.android_run != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify reused Android matches application sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.android_run }}
+        run: |
+          set -euo pipefail
+          source_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq .head_sha)
+          for attempt in $(seq 1 40); do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN/jobs" --jq '.jobs[] | select(.name == "android") | .conclusion')
+            if test "$state" = success; then break; fi
+            if test -n "$state"; then echo "Android source job failed: $state" >&2; exit 1; fi
+            sleep 30
+          done
+          test "$state" = success
+          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri index.html package.json package-lock.json vite.config.mjs scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: ShellPilot-android-preview
+          run-id: ${{ inputs.android_run }}
+          github-token: ${{ github.token }}
+          path: dist-apk
+      - name: Verify permanent Android certificate
+        env:
+          CERT_SHA256: ${{ vars.SHELLPILOT_ANDROID_CERT_SHA256 }}
+        run: |
+          test "$(sha256sum dist-apk/ShellPilot-android.cer | cut -d ' ' -f1)" = "$CERT_SHA256"
+          test "$(cat dist-apk/ANDROID-CERT-SHA256.txt)" = "$CERT_SHA256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShellPilot-android-preview
+          path: dist-apk/*
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Generate supplied avatar and Windows icons
+        run: |
+          npm run icon
+          npm run tauri -- icon build/icon.png
+          node scripts/set-icon-background.mjs
+      - run: npm run build
+      - name: Native Windows performance collector test
+        shell: pwsh
+        run: ./scripts/verify-windows-metrics.ps1
+      - name: Prepare verified NSIS toolchain through GitHub API
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force ci-bundle | Out-Null
+          gh release download nsis-3.13 --repo tauri-apps/binary-releases --pattern nsis-3.13.zip --dir ci-bundle --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS download failed' }
+          if ((Get-FileHash ci-bundle/nsis-3.13.zip -Algorithm SHA256).Hash.ToLower() -ne 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8') { throw 'NSIS checksum mismatch' }
+          Expand-Archive ci-bundle/nsis-3.13.zip ci-bundle/nsis
+          $bundleCache = Join-Path $env:LOCALAPPDATA 'tauri/NSIS'
+          New-Item -ItemType Directory -Force $bundleCache | Out-Null
+          Copy-Item ci-bundle/nsis/nsis-3.13/* $bundleCache -Recurse -Force
+          $pluginCache = Join-Path $bundleCache 'Plugins/x86-unicode/additional'
+          New-Item -ItemType Directory -Force $pluginCache | Out-Null
+          gh release download nsis_tauri_utils-v0.5.3 --repo tauri-apps/nsis-tauri-utils --pattern nsis_tauri_utils.dll --dir ci-bundle --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS plugin download failed' }
+          if ((Get-FileHash ci-bundle/nsis_tauri_utils.dll -Algorithm SHA256).Hash.ToLower() -ne '5ba143b5db4a87d32d6e7802e033330aae56cbceabe0d1e3ba41948385ad4709') { throw 'NSIS plugin checksum mismatch' }
+          Copy-Item -LiteralPath ci-bundle/nsis_tauri_utils.dll -Destination $pluginCache
+      - run: npm run tauri -- build
+      - name: Packaged Windows MCP smoke test
+        shell: pwsh
+        run: ./scripts/verify-windows-mcp.ps1
+      - name: Verify Windows brand metadata
+        shell: pwsh
+        run: ./scripts/verify-windows-brand.ps1
+      - name: Collect installer and portable executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist-win | Out-Null
+          Copy-Item src-tauri/target/release/bundle/nsis/*.exe dist-win/
+          Copy-Item src-tauri/target/release/shellpilot-app.exe dist-win/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShellPilot-windows-preview
+          path: dist-win/*
+          if-no-files-found: error
+  android:
+    if: inputs.android_run == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+      - name: Android NDK
+        run: |
+          sdkmanager --install 'ndk;27.0.12077973'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Generate supplied avatar and app icons
+        run: |
+          npm run icon
+          npm run tauri -- icon build/icon.png
+          node scripts/set-icon-background.mjs
+      - run: npm run build
+      - run: npm run tauri -- android init
+      - name: Prepare Gradle distribution with cloud retries
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrapper=src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+          distribution=$(sed -n 's/^distributionUrl=.*\/\(gradle-[^/]*\.zip\)$/\1/p' "$wrapper")
+          test -n "$distribution"
+          curl -fL --retry 5 --retry-all-errors --retry-delay 3 --max-time 120 --retry-max-time 600 "https://downloads.gradle.org/distributions/$distribution" -o "/tmp/$distribution"
+          curl -fL --retry 5 --retry-all-errors --retry-delay 3 --max-time 60 "https://downloads.gradle.org/distributions/$distribution.sha256" -o /tmp/gradle-sha256.txt
+          checksum=$(tr -d '\r\n' < /tmp/gradle-sha256.txt)
+          test "${#checksum}" = 64
+          printf '%s  %s\n' "$checksum" "/tmp/$distribution" | sha256sum --check
+          sed -i "s|^distributionUrl=.*|distributionUrl=file\\:///tmp/$distribution|;s/^networkTimeout=.*/networkTimeout=60000/" "$wrapper"
+          printf '\ndistributionSha256Sum=%s\n' "$checksum" >> "$wrapper"
+      - name: Generate Android launcher icons
+        run: |
+          npm run tauri -- icon build/icon.png
+          node scripts/set-icon-background.mjs
+      - run: node scripts/patch-android.mjs
+      - run: npm run tauri -- android build --apk --target aarch64
+      - name: Sign and verify APK with permanent ShellPilot key
+        env:
+          SIGNING_KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+          CERT_SHA256: ${{ vars.SHELLPILOT_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEY_B64" && test -n "$KEYSTORE_PASSWORD" && test -n "$CERT_SHA256"
+          umask 077
+          printf '%s' "$SIGNING_KEY_B64" | base64 --decode > /tmp/shellpilot-signing.p12
+          trap 'rm -f /tmp/shellpilot-signing.p12 /tmp/shellpilot-cert.cer' EXIT
+          keytool -exportcert -keystore /tmp/shellpilot-signing.p12 -alias shellpilot \
+            -storepass:env KEYSTORE_PASSWORD -file /tmp/shellpilot-cert.cer
+          test "$(sha256sum /tmp/shellpilot-cert.cer | cut -d ' ' -f1)" = "$CERT_SHA256"
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          mkdir -p dist-apk
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -path '*release*' | head -n 1)
+          test -n "$apk"
+          "$signer" sign --ks /tmp/shellpilot-signing.p12 --ks-key-alias shellpilot \
+            --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD \
+            --out dist-apk/ShellPilot-arm64-preview.apk "$apk"
+          "$signer" verify --verbose --print-certs dist-apk/ShellPilot-arm64-preview.apk > /tmp/signature-info.txt
+          cat /tmp/signature-info.txt
+          grep -F "certificate SHA-256 digest: $CERT_SHA256" /tmp/signature-info.txt
+          aapt=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -n 1)
+          "$aapt" dump badging dist-apk/ShellPilot-arm64-preview.apk > /tmp/package-info.txt
+          grep -F "package: name='app.shellpilot.client'" /tmp/package-info.txt
+          grep -F "application-label:'ShellPilot'" /tmp/package-info.txt
+          cp /tmp/shellpilot-cert.cer dist-apk/ShellPilot-android.cer
+          printf '%s\n' "$CERT_SHA256" > dist-apk/ANDROID-CERT-SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShellPilot-android-preview
+          path: dist-apk/*
+          if-no-files-found: error

@@ -1,0 +1,52 @@
+name: 问题反馈
+description: 报告连接、界面、AI、MCP 或文件操作的问题
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: 请先查看使用说明和已有 Issue。不要上传密码、私钥、API Key 或原始配置；截图和日志请脱敏。
+  - type: input
+    id: version
+    attributes:
+      label: Release 标签
+      description: 如 build-20261107-avatar，请从下载页面确认
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 应用平台
+      options:
+        - Windows 安装版
+        - Windows 便携 EXE
+        - Android ARM64
+        - 从源码运行 Rust 后端
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 系统和目标主机
+      description: 应用所在系统版本、目标服务器系统；MCP 问题还请填写客户端名称。无需填写真实地址。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开应用到出现问题，按顺序描述
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果与错误
+      description: 可附脱敏截图和最小必要日志
+    validations:
+      required: true

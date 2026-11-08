@@ -1,0 +1,34 @@
+name: 功能建议
+description: 提出一个具体的使用需求或改进
+title: '[Feature] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 想完成什么任务
+      description: 当前流程哪里不方便，适用于什么场景
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望怎样工作
+      description: 描述具体行为和期望入口，可附示意图
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 相关平台
+      multiple: true
+      options:
+        - Windows
+        - Android
+        - 内置 AI
+        - MCP
+        - 其他
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 当前替代办法
+      description: 可选，帮助理解优先级

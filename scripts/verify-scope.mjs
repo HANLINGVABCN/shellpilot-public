@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { reconcileScope } from '../src/scope.js';
+const hosts = [{id:'a'},{id:'b'},{id:'c'}];
+assert.deepEqual(reconcileScope(['a','b','c','deleted'],hosts),['a','b','c']);
+assert.deepEqual(reconcileScope(['a','a','deleted','b'],hosts),['a','b']);
+assert.deepEqual(reconcileScope([],hosts),[]);
+assert.deepEqual(reconcileScope(['a'],hosts),['a']);
+assert.deepEqual(reconcileScope(['a','b'],[{id:'b'}]),['b']);
+assert.equal(reconcileScope(null,[]),null);
+console.log('PASS: selection excludes stale/duplicate IDs, preserves empty and explicit selections');

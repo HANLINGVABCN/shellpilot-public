@@ -1,0 +1,10 @@
+*.log
+build/
+data/
+dist/
+node_modules/
+release/
+dist-actions/
+target/
+.env*
+.DS_Store
