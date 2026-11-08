@@ -196,7 +196,7 @@ pub async fn chat_completion_stream(opts: StreamOpts) -> Result<StreamResult, St
     for k in &active_keys {
         extra.insert(k.clone(), think_params[k].clone());
     }
-    let mut res: Option<reqwest::Response> = Some(do_fetch(&Value::Object(extra)).await?);
+    let mut res: Option<reqwest::Response> = Some(do_fetch(&Value::Object(extra.clone())).await?);
 
     for _attempt in 0..3 {
       if res.as_ref().unwrap().status().is_success(){break;}

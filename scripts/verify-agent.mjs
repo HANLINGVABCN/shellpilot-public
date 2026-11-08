@@ -66,7 +66,7 @@ const model = http.createServer((req, res) => {
       }else if(count===1){
         choice={delta:{tool_calls:[{index:0,id:'mem-'+task,function:{name:'remember_memory',arguments:JSON.stringify({topic:'回答风格',content:task==='memory-protected'?'AI 尝试覆盖手动记忆':task==='memory-update'?'中文回答，尽量简短':'请使用简短中文回答'})}}]},finish_reason:'tool_calls'};
       }else{choice={delta:{content:'记忆处理完成'},finish_reason:'stop'};}
-      res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(`data: ${JSON.stringify({choices:[choice]})}\n\ndata: [DONE]\n\n`);return;
+      res.writeHead(200,{'Content-Type':'text/event-stream'});res.end(`data: ${JSON.stringify({choices:[choice],usage:{prompt_tokens:1200,completion_tokens:300,prompt_tokens_details:{cached_tokens:800}}})}\n\ndata: [DONE]\n\n`);return;
     }
     if(task?.startsWith('queue-')){
       const count=(queueTasks.get(task)||0)+1;queueTasks.set(task,count);
@@ -302,6 +302,11 @@ try {
   ws.send(JSON.stringify({type:'chat-resume'}));
   async function runTask(text){events.length=0;ws.send(JSON.stringify({type:'chat',text,mode:'auto',effort:'off'}));await until(()=>events.some((event)=>event.type==='chat-done'));assert(!events.some((event)=>event.type==='chat-done'&&event.error),JSON.stringify(events.filter((event)=>event.error)));await until(()=>events.some((event)=>event.type==='chat-job-state'&&!event.busy));}
   await runTask('memory-capture');
+  const measured=events.find(event=>event.type==='chat-done').stats;
+  assert.equal(measured.inputTokens,2400);assert.equal(measured.outputTokens,600);assert.equal(measured.cachedTokens,1600);
+  assert.equal(measured.provider,'ci-model');assert.equal(measured.model,'ci-model');
+  const measuredChat=await api('/chats/__global__/'+(await api('/agent/status')).chatId);
+  assert.equal(measuredChat.messages.filter(m=>m.role==='assistant').at(-1).stats.inputTokens,2400,'Usage must survive conversation reload');
   let memories=(await api('/memories')).memories;assert.equal(memories.length,1);assert.equal(memories[0].source,'ai');
   await runTask('memory-duplicate');assert.equal((await api('/memories')).memories.length,1,'Duplicate memory must not create another record');
   const settingsBeforeMemory=await api('/settings');await api('/settings','PUT',{...settingsBeforeMemory,autoMemory:false});
