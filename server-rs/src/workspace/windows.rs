@@ -95,13 +95,16 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn SetInformationJobObject(job:Handle,class:u32,info:*const c_void,size:u32)->i32;
   fn AssignProcessToJobObject(job:Handle,process:Handle)->i32;
   fn TerminateJobObject(job:Handle,code:u32)->i32;
+  fn DeviceIoControl(handle:Handle,code:u32,input:*const c_void,input_bytes:u32,output:*mut c_void,output_bytes:u32,returned:*mut u32,overlapped:*mut c_void)->i32;
   fn CreateFileW(path:*const u16,access:u32,sharing:u32,attributes:*const SecurityAttributes,disposition:u32,flags:u32,template:Handle)->Handle;
   fn GetFileInformationByHandle(handle:Handle,info:*mut FileInfo)->i32;
  }
  #[link(name="userenv")]extern "system"{
   fn CreateAppContainerProfile(name:*const u16,display:*const u16,description:*const u16,capabilities:*const SidAttributes,count:u32,sid:*mut Sid)->i32;
   fn DeriveAppContainerSidFromAppContainerName(name:*const u16,sid:*mut Sid)->i32;
+  fn GetAppContainerFolderPath(sid:*const u16,path:*mut *mut u16)->i32;
  }
+ #[link(name="ole32")]extern "system"{fn CoTaskMemFree(value:*mut c_void);}
  #[link(name="advapi32")]extern "system"{
   fn FreeSid(sid:Sid)->Sid;
   fn ConvertSidToStringSidW(sid:Sid,output:*mut *mut u16)->i32;
@@ -137,6 +140,30 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let mut string=null_mut();checked(unsafe{ConvertSidToStringSidW(sid,&mut string)},"沙箱标识读取失败")?;
   let mut length=0;unsafe{while *string.add(length)!=0{length+=1;}}
   let s=unsafe{String::from_utf16_lossy(std::slice::from_raw_parts(string,length))};unsafe{LocalFree(string.cast());}Ok(s)
+ }
+ fn container_folder(sid:Sid)->Result<PathBuf,String>{
+  let id=sid_string(sid)?;let mut path=null_mut();
+  let status=unsafe{GetAppContainerFolderPath(w(&id).as_ptr(),&mut path)};
+  if status<0||path.is_null(){return Err(format!("沙箱运行目录不可用：{status:#x}"));}
+  let mut n=0;unsafe{while *path.add(n)!=0{n+=1;}}
+  let value=unsafe{PathBuf::from(String::from_utf16_lossy(std::slice::from_raw_parts(path,n)))};unsafe{CoTaskMemFree(path.cast());}
+  std::fs::create_dir_all(&value).map_err(|e|e.to_string())?;
+  Ok(value)
+ }
+ fn mount_directory(link:&Path,target:&Path)->Result<(),String>{
+  std::fs::create_dir(link).map_err(|e|e.to_string())?;
+  let substitute=w(&format!(r"\??\{}",target.display()));
+  let print=wide(target.as_os_str());
+  let data_length=8+(substitute.len()+print.len())*2;
+  if data_length>16000{return Err("工作区路径过长".into());}
+  let mut bytes=Vec::with_capacity(data_length+8);
+  bytes.extend_from_slice(&0xa0000003u32.to_le_bytes());bytes.extend_from_slice(&(data_length as u16).to_le_bytes());bytes.extend_from_slice(&0u16.to_le_bytes());
+  for value in [0u16,((substitute.len()-1)*2) as u16,(substitute.len()*2) as u16,((print.len()-1)*2) as u16]{bytes.extend_from_slice(&value.to_le_bytes());}
+  for value in substitute.iter().chain(print.iter()){bytes.extend_from_slice(&value.to_le_bytes());}
+  let raw=unsafe{CreateFileW(wide(link.as_os_str()).as_ptr(),0x40000000,7,null(),3,0x02000000|0x00200000,0)};
+  if raw==-1{return Err(error("工作区映射创建失败"));}
+  let _handle=HandleGuard(raw);let mut returned=0;
+  checked(unsafe{DeviceIoControl(raw,0x000900a4,bytes.as_ptr().cast(),bytes.len() as u32,null_mut(),0,&mut returned,null_mut())},"工作区映射创建失败")
  }
  pub fn prepare(root:&Path)->Result<(),String>{
   let sid=profile(root)?;let id=sid_string(sid.0)?;
@@ -227,10 +254,10 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let(mut r,mut wr)=(0,0);checked(unsafe{CreatePipe(&mut r,&mut wr,&a,0)},"命令输出管道创建失败")?;Ok((HandleGuard(r),HandleGuard(wr)))
  }
  pub struct Process{
-  process:HandleGuard,job:HandleGuard,pub stdout:Option<std::fs::File>,pub stderr:Option<std::fs::File>,script:PathBuf,
+  process:HandleGuard,job:HandleGuard,pub stdout:Option<std::fs::File>,pub stderr:Option<std::fs::File>,script:PathBuf,mount:PathBuf,_leases:Vec<super::DirectoryLease>,
  }
  unsafe impl Send for Process{}
- impl Drop for Process{fn drop(&mut self){self.stop_children();let _=std::fs::remove_file(&self.script);}}
+ impl Drop for Process{fn drop(&mut self){self.stop_children();let _=std::fs::remove_file(&self.script);let _=std::fs::remove_dir(&self.mount);}}
  impl Process{
   pub fn exit_code(&self)->Result<Option<u32>,String>{let wait=unsafe{WaitForSingleObject(self.process.0,0)};if wait==258{return Ok(None);}if wait!=0{return Err(error("命令等待失败"));}let mut code=0;checked(unsafe{GetExitCodeProcess(self.process.0,&mut code)},"命令状态读取失败")?;Ok(Some(code))}
   pub fn stop_children(&mut self){unsafe{TerminateJobObject(self.job.0,1);}}
@@ -238,8 +265,13 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  pub fn spawn(root:&Path,command:&str,network:bool)->Result<Process,String>{
   let sid=profile(root)?;
   let internal=root.join(".shellpilot");std::fs::create_dir_all(&internal).map_err(|e|e.to_string())?;
-  let script=internal.join(format!("task-{}.ps1",uuid::Uuid::new_v4().simple()));
-  let location=root.to_string_lossy().replace('\'',"''");
+  let container=container_folder(sid.0)?;
+  let run_dir=container.join(format!("ShellPilot-{}",uuid::Uuid::new_v4().simple()));
+  std::fs::create_dir(&run_dir).map_err(|e|e.to_string())?;
+  let mount=run_dir.join("work");mount_directory(&mount,root)?;
+  let leases=vec![super::hold_directory(root,root)?,super::hold_directory(&container,&run_dir)?];
+  let script=run_dir.join("task.ps1");
+  let location=mount.to_string_lossy().replace('\'',"''");
   let content=format!("$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)\n$OutputEncoding=[Text.UTF8Encoding]::new($false)\n$PSModuleAutoLoadingPreference='None'\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop\n[Environment]::CurrentDirectory='{location}'\nNew-PSDrive -Name Work -PSProvider FileSystem -Root '{location}' -Scope Global | Out-Null\nSet-Location -LiteralPath 'Work:\\'\n{command}\n");
   std::fs::write(&script,[&[0xef,0xbb,0xbf][..],content.as_bytes()].concat()).map_err(|e|e.to_string())?;
   let(out_read,out_write)=pipe()?;let(err_read,err_write)=pipe()?;let(in_read,in_write)=pipe()?;
@@ -260,11 +292,11 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   checked(unsafe{SetInformationJobObject(job.0,9,(&limits as *const ExtendedLimits).cast(),size_of::<ExtendedLimits>() as u32)},"命令进程限制设置失败")?;
   let mut info:StartupEx=unsafe{zeroed()};info.info.size=size_of::<StartupEx>() as u32;info.info.flags=0x100;info.info.stdin=in_read.0;info.info.stdout=out_write.0;info.info.stderr=err_write.0;info.attributes=attributes.pointer;
   let exe=PathBuf::from(std::env::var_os("SystemRoot").ok_or("Windows目录不可用")?).join("System32/WindowsPowerShell/v1.0/powershell.exe");
-  let exe_w=wide(exe.as_os_str());let root_w=wide(root.as_os_str());
+  let exe_w=wide(exe.as_os_str());let root_w=wide(mount.as_os_str());
   let mut line=w(&format!("\"{}\" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{}\"",exe.display(),script.display()));
   // Whitelist the sandbox's environment: no API keys or inherited app tokens.
   let system=std::env::var("SystemRoot").unwrap_or("C:\\Windows".into());
-  let env_strings=[format!("SystemRoot={system}"),format!("WINDIR={system}"),format!("PATH={system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),format!("PSModulePath={system}\\System32\\WindowsPowerShell\\v1.0\\Modules"),format!("PSModuleAnalysisCachePath={}",internal.join("ModuleAnalysisCache").display()),format!("TEMP={}",internal.display()),format!("TMP={}",internal.display()),format!("USERPROFILE={}",root.display()),format!("APPDATA={}",internal.display()),format!("LOCALAPPDATA={}",internal.display())];
+  let env_strings=[format!("SystemRoot={system}"),format!("WINDIR={system}"),format!("PATH={system}\\System32;{system}\\System32\\WindowsPowerShell\\v1.0"),format!("PSModulePath={system}\\System32\\WindowsPowerShell\\v1.0\\Modules"),format!("PSModuleAnalysisCachePath={}",container.join("ModuleAnalysisCache").display()),format!("TEMP={}",container.display()),format!("TMP={}",container.display()),format!("USERPROFILE={}",container.display()),format!("APPDATA={}",container.display()),format!("LOCALAPPDATA={}",container.display())];
   let mut env_strings=env_strings.to_vec();env_strings.sort_by_key(|s|s.to_ascii_uppercase());
   let environment:Vec<u16>=env_strings.join("\0").encode_utf16().chain([0,0]).collect();
   let mut pi:ProcessInfo=unsafe{zeroed()};
@@ -290,6 +322,6 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let mut out_read=out_read;let mut err_read=err_read;
   let stdout=unsafe{std::fs::File::from_raw_handle(out_read.0 as *mut c_void)};out_read.0=0;
   let stderr=unsafe{std::fs::File::from_raw_handle(err_read.0 as *mut c_void)};err_read.0=0;
-  Ok(Process{process,job,stdout:Some(stdout),stderr:Some(stderr),script})
+  Ok(Process{process,job,stdout:Some(stdout),stderr:Some(stderr),script,mount,_leases:leases})
  }
 }
