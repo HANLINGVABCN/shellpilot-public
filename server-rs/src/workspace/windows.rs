@@ -194,7 +194,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let sid=profile(root)?;
   let internal=root.join(".shellpilot");std::fs::create_dir_all(&internal).map_err(|e|e.to_string())?;
   let script=internal.join(format!("task-{}.ps1",uuid::Uuid::new_v4().simple()));
-  let content=format!("$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)\n$OutputEncoding=[Text.UTF8Encoding]::new($false)\n{command}\n");
+  let content=format!("$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)\n$OutputEncoding=[Text.UTF8Encoding]::new($false)\n$PSModuleAutoLoadingPreference='None'\nImport-Module ($PSHOME+'\\Microsoft.PowerShell.Commands.Management.dll') -ErrorAction Stop\nImport-Module ($PSHOME+'\\Microsoft.PowerShell.Commands.Utility.dll') -ErrorAction Stop\n{command}\n");
   std::fs::write(&script,[&[0xef,0xbb,0xbf][..],content.as_bytes()].concat()).map_err(|e|e.to_string())?;
   let(out_read,out_write)=pipe()?;let(err_read,err_write)=pipe()?;let(in_read,in_write)=pipe()?;
   checked(unsafe{SetHandleInformation(out_read.0,1,0)},"输出继承设置失败")?;
