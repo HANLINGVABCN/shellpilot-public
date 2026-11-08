@@ -89,6 +89,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn CreateProcessW(application:*const u16,command:*mut u16,process_attributes:*const SecurityAttributes,thread_attributes:*const SecurityAttributes,inherit:i32,flags:u32,environment:*const c_void,directory:*const u16,startup:*const StartupInfo,process:*mut ProcessInfo)->i32;
   fn ResumeThread(thread:Handle)->u32;
   fn GetExitCodeProcess(process:Handle,code:*mut u32)->i32;
+  fn WaitForSingleObject(handle:Handle,timeout:u32)->u32;
   fn TerminateProcess(process:Handle,code:u32)->i32;
   fn CreateJobObjectW(attributes:*const SecurityAttributes,name:*const u16)->Handle;
   fn SetInformationJobObject(job:Handle,class:u32,info:*const c_void,size:u32)->i32;
@@ -187,7 +188,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  unsafe impl Send for Process{}
  impl Drop for Process{fn drop(&mut self){self.stop_children();let _=std::fs::remove_file(&self.script);}}
  impl Process{
-  pub fn exit_code(&self)->Result<Option<u32>,String>{let mut code=0;checked(unsafe{GetExitCodeProcess(self.process.0,&mut code)},"命令状态读取失败")?;Ok(if code==259{None}else{Some(code)})}
+  pub fn exit_code(&self)->Result<Option<u32>,String>{let wait=unsafe{WaitForSingleObject(self.process.0,0)};if wait==258{return Ok(None);}if wait!=0{return Err(error("命令等待失败"));}let mut code=0;checked(unsafe{GetExitCodeProcess(self.process.0,&mut code)},"命令状态读取失败")?;Ok(Some(code))}
   pub fn stop_children(&mut self){unsafe{TerminateJobObject(self.job.0,1);}}
  }
  pub fn spawn(root:&Path,command:&str,network:bool)->Result<Process,String>{
