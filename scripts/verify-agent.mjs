@@ -329,6 +329,12 @@ try {
   const existing=(await api('/memories')).memories.find((memory)=>memory.topic==='回答风格');
   await api('/memories/'+existing.id,'PUT',{topic:'回答风格',content:'由用户手动维护的回答偏好'});
   await runTask('memory-protected');assert.equal((await api('/memories')).memories.find((memory)=>memory.id===existing.id).content,'由用户手动维护的回答偏好','AI cannot overwrite user-managed memory');
+  const simpleOne=await api('/memories','POST',{content:'一个没有主题的记忆',enabled:true});
+  const simpleTwo=await api('/memories','POST',{content:'另一个没有主题的记忆',enabled:true});
+  assert.notEqual(simpleOne.memory.id,simpleTwo.memory.id,'Different one-line memories need no topic');
+  const simpleDuplicate=await api('/memories','POST',{content:'一个没有主题的记忆'});assert.equal(simpleDuplicate.status,'duplicate');
+  await api('/memories/'+simpleOne.memory.id,'PUT',{content:'编辑后的单行记忆',expectedUpdatedAt:simpleOne.memory.updatedAt});
+  await api('/memories/batch','POST',{ids:[simpleOne.memory.id,simpleTwo.memory.id],action:'delete'});
   const memoryFile=JSON.parse(fs.readFileSync(path.join(dir,'memories.json'),'utf8'));assert.equal(memoryFile.length,2);
   const exported=await fetch(base+'/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'test-backup'})});assert(exported.ok);
   const exportData=Buffer.from(await exported.arrayBuffer()).toString('base64');await api('/import/preview','POST',{password:'test-backup',data:exportData});
@@ -342,6 +348,12 @@ try {
   ws.send(JSON.stringify({type:'chat',text:'queue-edit',mode:'auto',effort:'off'}));
   ws.send(JSON.stringify({type:'chat',text:'queue-cancel',mode:'auto',effort:'off'}));
   await until(()=>events.some((event)=>event.type==='chat-job-state'&&event.queue?.length===2));
+  ws.send(JSON.stringify({type:'chat',text:'queue-take-test',mode:'auto',effort:'off'}));
+  await until(()=>events.some(event=>event.type==='chat-job-state'&&event.queue?.length===3));
+  const toTake=(await api('/agent/status')).queue.find(job=>job.text==='queue-take-test');
+  ws.send(JSON.stringify({type:'chat-queue-take',jobId:toTake.id}));
+  await until(()=>events.some(event=>event.type==='chat-queue-taken'&&event.text==='queue-take-test'));
+  assert(!(await api('/agent/status')).queue.some(job=>job.id===toTake.id),'Taken message must be removed atomically before being put in the input');
   const queued=(await api('/agent/status')).queue;
   ws.send(JSON.stringify({type:'chat-queue-edit',jobId:queued[0].id,text:'queue-second'}));
   ws.send(JSON.stringify({type:'chat-queue-remove',jobId:queued[1].id}));
