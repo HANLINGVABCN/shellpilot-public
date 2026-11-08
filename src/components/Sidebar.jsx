@@ -9,7 +9,7 @@ const NAV = [
 ];
 
 export default function Sidebar({
-  width, view, setView, onHide, hosts, probeMap, termHostIds,
+  width, view, setView, onHide, hosts, probeMap, termHostIds, dataUnavailable=false,
   onOpenTerminal, onOpenMonitor, onOpenFiles, onAdd, onEdit, onDelete, onCloseHost
 }) {
   const [order, setOrder] = useState(() => loadOrder('shellpilot-nav-order', NAV.map((n) => n.id)));
@@ -156,7 +156,7 @@ export default function Sidebar({
         </div>
       )}
       <div className="host-list">
-        {hosts.length === 0 && (
+        {hosts.length === 0 && !dataUnavailable && (
           <div className="empty-tip">还没有服务器<br />点下面按钮添加第一台</div>
         )}
         {hosts.length > 0 && filteredHosts.length === 0 && (
@@ -178,7 +178,7 @@ export default function Sidebar({
         })}
       </div>
 
-      <button className="btn add-host" onClick={onAdd}>＋ 添加服务器</button>
+      <button className="btn add-host" disabled={dataUnavailable} onClick={onAdd}>＋ 添加服务器</button>
     </div>
   );
 }

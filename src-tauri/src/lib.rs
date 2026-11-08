@@ -15,7 +15,7 @@ pub fn run() {
             // 数据目录：%APPDATA%/ShellPilot（桌面打包后程序目录只读）
             #[cfg(desktop)]
             let data_dir = app.path().data_dir().map(|base| base.join("ShellPilot"))
-                .unwrap_or_else(|_| std::path::PathBuf::from("data"));
+                ?;
             #[cfg(mobile)]
             let data_dir = app.path().app_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("data"));

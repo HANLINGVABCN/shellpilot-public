@@ -1,5 +1,6 @@
 pub mod util; pub use util::*;
 pub mod store; pub use store::*;
+pub mod storage;
 pub mod crypt; pub use crypt::*;
 pub mod safety; pub use safety::*;
 pub mod chats; pub use chats::*;
@@ -143,6 +144,7 @@ impl AppState {
 
 /// 载入 hosts 并启动探针（bin 与 Tauri 壳共用）
 pub async fn bootstrap(st: &Arc<AppState>) {
+    if let Err(error)=crate::validate_storage(){crate::store::report_storage_error(error);return;}
     crate::jobs::restore(st).await;
     let hosts: Vec<Value> = load_json_or("hosts.json", serde_json::json!([]))
         .as_array()

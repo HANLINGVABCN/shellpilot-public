@@ -31,7 +31,8 @@
         "languages": [
           "SimpChinese",
           "English"
-        ]
+        ],
+        "template": "installer.nsi"
       }
     }
   }

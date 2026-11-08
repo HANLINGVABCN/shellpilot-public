@@ -45,6 +45,8 @@ input, textarea, select, button { font-family: inherit; }
 
 #app { display: flex; height: calc(var(--sp-viewport-height, 100dvh) / var(--sp-ui-zoom, 1)); overflow: hidden; }
 .mobile-nav { display: none; }
+.storage-issue { margin:16px; padding:16px; border:1px solid var(--border); border-radius:var(--radius); }
+.storage-issue p { color:var(--muted); line-height:1.6; overflow-wrap:anywhere; margin:12px 0; }
 .main, .work, .stage, .chat-panel, .chat-list { min-height: 0; }
 
 /* ===== 侧边栏 ===== */

@@ -3,11 +3,61 @@ use serde_json::{json, Map, Value};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::sync::RwLock;
 
 static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static STORAGE_FAULT: RwLock<Option<String>> = RwLock::new(None);
+
+pub fn storage_fault()->Option<String>{STORAGE_FAULT.read().unwrap().clone()}
+pub fn clear_storage_fault(){*STORAGE_FAULT.write().unwrap()=None;}
+fn storage_failed(message:String) {
+    eprintln!("ShellPilot data: {message}");
+    let mut fault=STORAGE_FAULT.write().unwrap();
+    if fault.is_none(){*fault=Some(message);}
+}
+pub fn report_storage_error(message:String){storage_failed(message);}
+fn read_json_file(path:&std::path::Path)->Result<Option<Value>,String> {
+    let text=match std::fs::read_to_string(path){
+        Ok(text)=>text,
+        Err(error) if error.kind()==std::io::ErrorKind::NotFound=>return Ok(None),
+        Err(error)=>return Err(format!("读取 {} 失败：{error}",path.file_name().unwrap_or_default().to_string_lossy())),
+    };
+    let value:Value=serde_json::from_str(text.trim_start_matches('\u{feff}'))
+        .map_err(|error|format!("{} 的数据格式损坏：{error}",path.file_name().unwrap_or_default().to_string_lossy()))?;
+    let name=path.file_name().unwrap_or_default().to_string_lossy();
+    let shape=match name.as_ref(){
+        "hosts.json"|"memories.json"|"forward-rules.json"=>value.is_array(),
+        "settings.json"|"agent-jobs.json"|"trusted-host-keys.json"|"observed-host-keys.json"=>value.is_object(),
+        "chats.json"=>value.as_object().is_some_and(|chats|chats.values().all(Value::is_array)),
+        _=>true,
+    };
+    if !shape{return Err(format!("{name} 的数据结构不正确，原文件已保留"));}
+    Ok(Some(value))
+}
+pub fn validate_storage()->Result<(),String> {
+    let dir=data_dir();
+    std::fs::create_dir_all(&dir).map_err(|error|format!("无法打开数据目录：{error}"))?;
+    for entry in std::fs::read_dir(&dir).map_err(|error|format!("无法读取数据目录：{error}"))? {
+        let entry=entry.map_err(|error|error.to_string())?;
+        let path=entry.path();
+        if path.extension().is_some_and(|e|e=="json")&&path.file_name().is_some_and(|n|n!="runtime.json"){
+            read_json_file(&path)?;
+        }
+    }
+    let probe=dir.join(format!(".shellpilot-access-{}",uuid::Uuid::new_v4().simple()));
+    let check=(||{
+        let mut file=std::fs::OpenOptions::new().write(true).create_new(true).open(&probe)
+            .map_err(|error|format!("数据目录不可写：{error}"))?;
+        file.write_all(b"ShellPilot").and_then(|_|file.sync_all()).map_err(|error|error.to_string())?;
+        drop(file);
+        std::fs::remove_file(&probe).map_err(|error|error.to_string())
+    })();
+    let _=std::fs::remove_file(probe);
+    check
+}
 
 pub fn init_data_dir(dir: PathBuf) {
-    let _ = std::fs::create_dir_all(&dir);
+    if let Err(error)=std::fs::create_dir_all(&dir){storage_failed(format!("无法创建数据目录：{error}"));}
     let _ = DATA_DIR.set(dir);
 }
 
@@ -19,8 +69,10 @@ pub fn data_dir() -> PathBuf {
 }
 
 pub fn load_json(name: &str) -> Option<Value> {
-    let text = std::fs::read_to_string(data_dir().join(name)).ok()?;
-    serde_json::from_str(&text).ok()
+    match read_json_file(&data_dir().join(name)){
+        Ok(value)=>value,
+        Err(error)=>{storage_failed(error);None}
+    }
 }
 
 /// Node: loadJSON(name, fallback)
@@ -30,10 +82,18 @@ pub fn load_json_or(name: &str, fallback: Value) -> Value {
 
 /// Node: saveJSON —— JSON.stringify(value, null, 2)
 pub fn save_json(name: &str, value: &Value) {
-    let pretty = serde_json::to_string_pretty(value).unwrap_or_else(|_| "null".into());
-    if let Ok(mut f) = std::fs::File::create(data_dir().join(name)) {
-        let _ = f.write_all(pretty.as_bytes());
-    }
+    if storage_fault().is_some()&&name!="runtime.json"{return;}
+    let path=data_dir().join(name);
+    let temp=path.with_extension(format!("json.{}.tmp",uuid::Uuid::new_v4().simple()));
+    let result=(||->Result<(),String>{
+        let pretty=serde_json::to_vec_pretty(value).map_err(|error|error.to_string())?;
+        let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temp).map_err(|error|error.to_string())?;
+        file.write_all(&pretty).and_then(|_|file.sync_all()).map_err(|error|error.to_string())?;
+        drop(file);
+        std::fs::rename(&temp,&path).map_err(|error|error.to_string())
+    })();
+    let _=std::fs::remove_file(&temp);
+    if let Err(error)=result{storage_failed(format!("保存 {name} 失败，原文件已保留：{error}"));}
 }
 
 /// Node: appendAudit —— 一行一条 JSON，失败静默
@@ -132,4 +192,21 @@ mod budget_tests {
 /// 读取设置里的某个键（对象形式）
 pub fn settings_obj() -> Map<String, Value> {
     get_settings().as_object().cloned().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod data_tests{
+    use super::*;
+    #[test]fn invalid_and_bom_files_are_distinguished_from_first_use(){
+        let dir=std::env::temp_dir().join(format!("shellpilot-json-{}",uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file=dir.join("hosts.json");
+        assert!(read_json_file(&file).unwrap().is_none());
+        std::fs::write(&file,"\u{feff}[{\"id\":\"demo\"}]").unwrap();
+        assert_eq!(read_json_file(&file).unwrap().unwrap()[0]["id"],"demo");
+        std::fs::write(&file,"{broken").unwrap();assert!(read_json_file(&file).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(),"{broken");
+        std::fs::write(&file,"{}").unwrap();assert!(read_json_file(&file).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

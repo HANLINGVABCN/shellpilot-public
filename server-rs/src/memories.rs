@@ -5,6 +5,7 @@ use std::sync::Mutex;
 static LOCK: Mutex<()> = Mutex::new(());
 fn read() -> Vec<Value> { crate::load_json_or("memories.json",json!([])).as_array().cloned().unwrap_or_default() }
 fn write(memories:&[Value])->Result<(),String> {
+    if let Some(error)=crate::storage_fault(){return Err(error);}
     let path=crate::data_dir().join("memories.json");
     let temp=path.with_extension("json.tmp");
     std::fs::write(&temp,serde_json::to_vec_pretty(memories).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;

@@ -26,6 +26,7 @@ jobs:
           $preview = Start-Process -FilePath $nodeRuntime -ArgumentList @($viteEntry, 'preview', '--host', '127.0.0.1', '--port', '4173') -WindowStyle Hidden -PassThru
           try {
             node scripts/verify-reading-terminal.mjs
+          node scripts/verify-storage-ui.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Windows terminal and reading checks failed' }
           } finally {
             Stop-Process -Id $preview.Id -ErrorAction SilentlyContinue
@@ -60,6 +61,8 @@ jobs:
       - run: node scripts/verify-scope.mjs
       - run: node scripts/verify-brand.mjs
       - run: cargo test --manifest-path server-rs/Cargo.toml
+      - name: Data failure and recovery integration
+        run: node scripts/verify-storage.mjs
       - name: Agent and MCP integration
         run: node scripts/verify-agent.mjs
       - name: Browser layout verification

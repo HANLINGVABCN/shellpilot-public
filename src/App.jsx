@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { api } from './api.js';
+import StorageIssue from './components/StorageIssue.jsx';
 import { ws } from './ws.js';
 import Sidebar from './components/Sidebar.jsx';
 import HostModal from './components/HostModal.jsx';
@@ -61,6 +62,14 @@ export default function App() {
   }, []);
   const [hosts, setHosts] = useState([]);
   const [hostsLoaded, setHostsLoaded] = useState(false);
+  const [storageError,setStorageError]=useState('');
+  useEffect(()=>{
+    const failed=event=>setStorageError(event.detail);
+    window.addEventListener('shellpilot-storage-error',failed);
+    api('/storage/status').then(status=>{if(status.error)setStorageError(status.error);}).catch(()=>{});
+    const off=ws.on('storage-error',m=>setStorageError(m.error));
+    return()=>{window.removeEventListener('shellpilot-storage-error',failed);off();};
+  },[]);
   const [probeMap, setProbeMap] = useState({});               // hostId → 探针状态（侧栏圆点 / 监控状态）
   const [statusBySession, setStatusBySession] = useState({}); // sessionId → 终端连接状态
   // 默认页 = 上次停留的页面（首次则取侧栏排在第一位的导航项）
@@ -517,7 +526,7 @@ export default function App() {
           <Sidebar
             width={sideW}
             view={view} setView={setView} onHide={toggleSidebar}
-            hosts={hosts} probeMap={connectionMap}
+            hosts={hosts} probeMap={connectionMap} dataUnavailable={!!storageError}
             termHostIds={new Set([...termSessions.map((s) => s.hostId), ...monSessions.map((s) => s.hostId), ...fileSessions.map((s) => s.hostId)])}
             onOpenTerminal={(...args) => { openTerminal(...args); setMobilePage('main'); }}
             onOpenMonitor={(...args) => { openMonitor(...args); setMobilePage('main'); }}
@@ -551,7 +560,7 @@ export default function App() {
           </button>
         )}
 
-        {view === 'home' ? (
+        {storageError ? <StorageIssue error={storageError} onRecovered={()=>{setStorageError('');loadHosts();window.dispatchEvent(new Event('shellpilot-hosts-changed'));}}/> : view === 'home' ? (
           <HomeView onOpenHost={openMonitor} onOpenIdentity={(hostId)=>{openTerminal(hostId);setMobilePage('main');}} connectionMap={connectionMap} />
         ) : view === 'work' ? (
           <>
@@ -765,7 +774,7 @@ export default function App() {
       </div>
 
       {/* AI 对话：所有页面都挂右侧（总览 / 工作台 / 配置） */}
-      {(chatOpen || mobile) && (
+      {(chatOpen || mobile) && !storageError && (
         <>
           <div className="drag-handle-v" onMouseDown={(e) => beginResize(e, 'chat')} title="拖拽调整宽度" />
           <ChatPanel hosts={hosts} hostsLoaded={hostsLoaded} probeMap={connectionMap} width={chatW} onOpenSettings={() => { setView('settings'); setMobilePage('main'); }} />

@@ -1264,6 +1264,8 @@ async fn static_fallback(method: axum::http::Method, uri: axum::http::Uri) -> Re
 
 pub fn router(st: App) -> Router {
     Router::new()
+        .route("/api/storage/status",get(crate::storage::status))
+        .route("/api/storage/retry",post(crate::storage::retry))
         .route("/api/open-external-url",post(open_external_url))
         .route("/api/mcp/call", post(mcp_call))
         .route("/api/mcp/config", get(mcp_config))
@@ -1308,5 +1310,6 @@ pub fn router(st: App) -> Router {
         .route("/ws", get(crate::ws::ws_handler))
         .fallback(static_fallback)
         .layer(axum::extract::DefaultBodyLimit::max(220 * 1024 * 1024))
+        .layer(axum::middleware::from_fn(crate::storage::guard))
         .with_state(st)
 }

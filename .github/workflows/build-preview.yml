@@ -98,6 +98,9 @@ jobs:
       - name: Verify Windows brand metadata
         shell: pwsh
         run: ./scripts/verify-windows-brand.ps1
+      - name: Verify actual installer retains user data across reinstall
+        shell: pwsh
+        run: ./scripts/verify-windows-upgrade.ps1
       - name: Collect installer and portable executable
         shell: pwsh
         run: |

@@ -74,6 +74,7 @@ async fn handle_socket(socket: WebSocket, st: Arc<AppState>) {
         };
         let Ok(m) = serde_json::from_str::<Value>(&text) else { continue };
         let request_type=m["type"].as_str().unwrap_or("").to_string();
+        if let Some(error)=crate::storage_fault(){if request_type!="chat-stop"{let _=out_tx_handler.send(json!({"type":"storage-error","error":error}).to_string());continue;}}
         if let Err(e) = handle_ws(&st, &out_tx_handler, &subs, m).await {
             let _ = out_tx_handler.send(json!({ "type": "error", "message": e,"requestType":request_type }).to_string());
         }
