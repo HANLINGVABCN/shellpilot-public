@@ -8,6 +8,7 @@ import ToolCard from './ToolCard.jsx';
 import ResizableChatInput from './ResizableChatInput.jsx';
 import ReplyStats from './ReplyStats.jsx';
 import WorkspacePanel,{workspaceSupported} from './WorkspacePanel.jsx';
+import {FolderIcon} from '../icons.jsx';
 
 function UserMessage({ text }) {
   const [expanded, setExpanded] = useState(false);
@@ -116,6 +117,11 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [modelName, setModelName] = useState('');
   const [noModel, setNoModel] = useState(false);
   const [workspaceOpen,setWorkspaceOpen]=useState(false);
+  const [workspaceEnabled,setWorkspaceEnabled]=useState(false);
+  useEffect(()=>{
+    const load=()=>{if(workspaceSupported())api('/workspace').then(config=>setWorkspaceEnabled(!!config.enabled)).catch(()=>{});};
+    load();return ws.on('workspace-changed',load);
+  },[]);
   const [modelMenu, setModelMenu] = useState(false);
   const [models, setModels] = useState([]);
   const [mode, setMode] = useState(() => localStorage.getItem('shellpilot-mode') || 'ask');
@@ -707,7 +713,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
         <ResizableChatInput
           inputRef={editorRef}
           value={input}
-          placeholder={hosts.length === 0 ? '先在左侧添加一台服务器' : scopeCount === 0 ? '先在下方「机器」里勾选 AI 能操作的服务器' : '输入任务，回车发送…'}
+          placeholder={workspaceEnabled?'输入工作区或服务器任务…':hosts.length === 0 ? '先在左侧添加一台服务器' : scopeCount === 0 ? '先在下方「机器」里勾选 AI 能操作的服务器' : '输入任务，回车发送…'}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
@@ -734,7 +740,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
             )}
           </div>
           <div className="ca-right">
-            {workspaceSupported()&&<button className={'btn btn-sm'+(workspaceOpen?' on':'')} onClick={()=>setWorkspaceOpen(value=>!value)}>工作区</button>}
+            {workspaceSupported()&&<button className={'btn btn-sm'+(workspaceOpen?' on':'')} title="工作区" aria-label="工作区" onClick={()=>setWorkspaceOpen(value=>!value)}><FolderIcon size={14}/></button>}
             <div className="effort-wrap">
               <button className="btn btn-sm mode-btn" title="思考深度 — 参数会按模型自动翻译，不支持时自动忽略，不会报错" onClick={() => setEffortMenu(!effortMenu)}>
                 思考·{curEffort.label}

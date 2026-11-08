@@ -142,7 +142,7 @@ async fn execute_tool(ctx:ToolContext, tc:Value, blocked:bool) -> Value {
 fn independent(tc:&Value) -> bool {
     let name=tc.pointer("/function/name").and_then(Value::as_str).unwrap_or("");
     match name {
-        "vps_list"|"vps_read_file"|"vps_metrics"|"get_metrics"|"vps_metrics_batch"|"vps_diagnose"|"vps_logs"=>true,
+        "vps_list"|"vps_read_file"|"vps_metrics"|"get_metrics"|"vps_metrics_batch"|"vps_diagnose"|"vps_logs"|"workspace_list"|"workspace_read"=>true,
         "vps_exec"|"exec_command"=>serde_json::from_str::<Value>(tc.pointer("/function/arguments").and_then(Value::as_str).unwrap_or(""))
             .ok().and_then(|v|v["command"].as_str().map(|s|crate::safety::safety_check(s).mode=="auto")).unwrap_or(false),
         _=>false,
