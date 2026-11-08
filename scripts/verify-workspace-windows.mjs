@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {once} from 'node:events';
 assert(process.env.GITHUB_ACTIONS==='true'&&process.platform==='win32','Run sandbox checks only on isolated Windows CI');
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(dir,'working'),data=path.join(dir,'data');
@@ -25,7 +25,11 @@ try{
  assert.equal((await api('/workspace')).enabled,true);
  await action('workspace_write',{path:'input.txt',content:'hello workspace'});
  assert.equal((await action('workspace_read',{path:'input.txt'})).content,'hello workspace');
- const run=await execute("Get-Content -LiteralPath './input.txt'; Set-Content -LiteralPath './output.txt' -Value 'sandbox output' -Encoding UTF8; $env:USERNAME");
+ const pending=execute("Get-Content -LiteralPath './input.txt'; Set-Content -LiteralPath './output.txt' -Value 'sandbox output' -Encoding UTF8; $env:USERNAME");
+ const trace=setTimeout(()=>{
+  try{console.log(execFileSync('powershell.exe',['-NoProfile','-Command',"Get-Process powershell -ErrorAction SilentlyContinue|Select-Object Id,CPU,Handles,Threads,Responding|ConvertTo-Json -Depth 1;Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=(Get-Date).AddMinutes(-2)} -MaxEvents 4 -ErrorAction SilentlyContinue|Select-Object ProviderName,Id,Message|ConvertTo-Json"],{encoding:'utf8',timeout:5000}));}catch{}
+ },5000);
+ const run=await pending;clearTimeout(trace);
  assert.equal(run.exitCode,0,JSON.stringify(run));assert(run.stdout.includes('hello workspace'));assert(fs.readFileSync(path.join(root,'output.txt'),'utf8').includes('sandbox output'));
  assert.equal(run.sandbox,'AppContainer');
  const outsidePs=canary.replaceAll("'","''");

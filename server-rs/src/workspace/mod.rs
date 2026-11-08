@@ -50,12 +50,14 @@ pub fn validate_root(path:&Path)->Result<PathBuf,String>{
  if !path.is_absolute(){return Err("请选择本机的完整目录路径".into());}
  let root=canonical(path).map_err(|e|format!("无法访问工作区目录：{e}"))?;
  if !root.is_dir(){return Err("工作区必须是文件夹".into());}
+ if let Ok(data)=canonical(&crate::data_dir()){if root.starts_with(&data)||data.starts_with(&root){return Err("不能把ShellPilot配置目录作为AI工作区".into());}}
  let parent=root.parent().ok_or("不能把整个磁盘作为工作区")?;
  if parent.parent().is_none(){return Err("请选择专门的工作文件夹".into());}
  for base in [std::env::var_os("USERPROFILE"),std::env::var_os("APPDATA"),std::env::var_os("LOCALAPPDATA"),std::env::var_os("SystemRoot"),std::env::var_os("ProgramFiles"),std::env::var_os("ProgramFiles(x86)")].into_iter().flatten(){
   if let Ok(base)=canonical(&PathBuf::from(base)){let protected=std::env::var_os("SystemRoot").is_some_and(|sys|PathBuf::from(sys)==base)||base.file_name().is_some_and(|name|name.to_string_lossy().to_lowercase().contains("program files"));if root==base||(protected&&root.starts_with(&base)){return Err("请选择专门的工作文件夹，不要选择系统或用户数据根目录".into());}}
  }
  reject_links(&root)?;
+ if let Ok(internal)=std::fs::symlink_metadata(root.join(".shellpilot")){if internal.file_type().is_symlink(){return Err("工作区运行目录不能是链接".into());}}
  Ok(root)
 }
 fn reject_links(path:&Path)->Result<(),String>{

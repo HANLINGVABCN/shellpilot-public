@@ -67,6 +67,8 @@ ShellPilot 是运行在自己电脑或安卓设备上的 SSH 工作台。你可�
 
 ## AI 与 MCP
 
+本机 AI 可使用指定文件夹作为隔离工作区，与用户协作处理文件；排队取回、每条回答统计和简洁记忆列表见 [工作区与聊天说明](docs/WORKSPACE.md)。
+
 MCP 默认关闭。开启后，在设置里选择允许外部 AI 操作的服务器，并复制自动生成的启动配置。支持 MCP STDIO 的客户端可以启动 `shellpilot-app.exe --mcp`。具体接入及示例见 [MCP 文档](docs/MCP.md)。
 
 | 工具 | 用途 |
