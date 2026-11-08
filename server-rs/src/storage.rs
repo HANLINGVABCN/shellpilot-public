@@ -23,6 +23,13 @@ pub async fn retry(State(st):State<Arc<crate::AppState>>)->Response{
 }
 pub async fn guard(request:axum::extract::Request,next:axum::middleware::Next)->Response{
     let path=request.uri().path().to_string();
+    if path.starts_with("/api/workspace"){
+        if let Some(origin)=request.headers().get("origin"){
+            let same=origin.to_str().ok().and_then(|s|reqwest::Url::parse(s).ok()).is_some_and(|url|
+                url.scheme()=="http"&&url.host_str()==Some("127.0.0.1")&&url.port_or_known_default()==request.headers().get("host").and_then(|v|v.to_str().ok()).and_then(|s|s.rsplit(':').next()).and_then(|s|s.parse::<u16>().ok()));
+            if !same{return (StatusCode::FORBIDDEN,Json(json!({"error":"工作区只允许本机应用页面访问"}))).into_response();}
+        }
+    }
     let persistent=(path.starts_with("/api/")||path=="/ws")&&!matches!(path.as_str(),"/api/storage/status"|"/api/storage/retry"|"/api/mcp/config"|"/api/open-external-url");
     if persistent&&crate::storage_fault().is_some(){return unavailable();}
     let result=next.run(request).await;
