@@ -195,7 +195,8 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let sid=profile(root)?;
   let internal=root.join(".shellpilot");std::fs::create_dir_all(&internal).map_err(|e|e.to_string())?;
   let script=internal.join(format!("task-{}.ps1",uuid::Uuid::new_v4().simple()));
-  let content=format!("$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)\n$OutputEncoding=[Text.UTF8Encoding]::new($false)\n$PSModuleAutoLoadingPreference='None'\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop\n{command}\n");
+  let location=root.to_string_lossy().replace('\'',"''");
+  let content=format!("$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)\n$OutputEncoding=[Text.UTF8Encoding]::new($false)\n$PSModuleAutoLoadingPreference='None'\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Management\\Microsoft.PowerShell.Management.psd1') -ErrorAction Stop\nImport-Module ($PSHOME+'\\Modules\\Microsoft.PowerShell.Utility\\Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop\nSet-Location -LiteralPath '{location}'\n[Environment]::CurrentDirectory='{location}'\n{command}\n");
   std::fs::write(&script,[&[0xef,0xbb,0xbf][..],content.as_bytes()].concat()).map_err(|e|e.to_string())?;
   let(out_read,out_write)=pipe()?;let(err_read,err_write)=pipe()?;let(in_read,in_write)=pipe()?;
   checked(unsafe{SetHandleInformation(out_read.0,1,0)},"输出继承设置失败")?;
