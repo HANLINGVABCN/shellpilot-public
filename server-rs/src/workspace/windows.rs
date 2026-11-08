@@ -151,6 +151,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   }
   let low=std::process::Command::new("icacls.exe").arg(root).arg("/setintegritylevel").arg("(OI)(CI)L").arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
   if !low.status.success(){return Err("无法设置工作区的隔离运行权限".into());}
+  journal[&key]["managedLabel"]=json!(integrity(root)?);crate::save_json("workspace-acl.json",&journal);
   std::fs::create_dir_all(root.join(".shellpilot")).map_err(|e|e.to_string())?;Ok(())
  }
  pub fn release(root:&Path)->Result<(),String>{
@@ -159,7 +160,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   if !out.status.success(){return Err("工作区沙箱权限清理失败".into());}
   for path in ancestor_paths(root){let _=std::process::Command::new("icacls.exe").arg(path).arg("/remove:g").arg(format!("*{id}")).arg("/Q").creation_flags(0x08000000).output();}
   let mut journal=crate::load_json_or("workspace-acl.json",json!({}));let key=root.to_string_lossy().to_string();
-  if let Some(label)=journal[&key]["label"].as_str(){restore_integrity(root,label)?;}
+  if let Some(label)=journal[&key]["label"].as_str(){if journal[&key]["managedLabel"].as_str().is_none_or(|managed|integrity(root).as_deref()==Ok(managed)){restore_integrity(root,label)?;}}
   if let Some(object)=journal.as_object_mut(){object.remove(&key);}crate::save_json("workspace-acl.json",&journal);
   Ok(())
  }
