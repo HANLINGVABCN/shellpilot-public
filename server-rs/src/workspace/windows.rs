@@ -106,6 +106,10 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn FreeSid(sid:Sid)->Sid;
   fn ConvertSidToStringSidW(sid:Sid,output:*mut *mut u16)->i32;
   fn ConvertStringSidToSidW(input:*const u16,sid:*mut Sid)->i32;
+  fn GetFileSecurityW(path:*const u16,information:u32,descriptor:*mut c_void,length:u32,needed:*mut u32)->i32;
+  fn SetFileSecurityW(path:*const u16,information:u32,descriptor:*const c_void)->i32;
+  fn ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor:*const c_void,revision:u32,information:u32,text:*mut *mut u16,length:*mut u32)->i32;
+  fn ConvertStringSecurityDescriptorToSecurityDescriptorW(text:*const u16,revision:u32,descriptor:*mut *mut c_void,size:*mut u32)->i32;
  }
  #[link(name="kernel32")]extern "system"{fn LocalFree(value:*mut c_void)->*mut c_void;}
  fn wide(s:&std::ffi::OsStr)->Vec<u16>{s.encode_wide().chain(Some(0)).collect()}
@@ -133,15 +137,51 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  }
  pub fn prepare(root:&Path)->Result<(),String>{
   let sid=profile(root)?;let id=sid_string(sid.0)?;
+  let key=root.to_string_lossy().to_string();
+  let mut journal=crate::load_json_or("workspace-acl.json",json!({}));
+  if journal.get(&key).is_none(){journal[&key]=json!({"label":integrity(root)?});crate::save_json("workspace-acl.json",&journal);}
   // Add only this AppContainer's inheritable Modify ACL, preserving other ACLs.
   let out=std::process::Command::new("icacls.exe").arg(root).arg("/grant").arg(format!("*{id}:(OI)(CI)M")).arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
   if !out.status.success(){return Err("无法授予沙箱工作区权限，请选择你能修改权限的文件夹".into());}
+  for path in ancestor_paths(root){
+   let _=std::process::Command::new("icacls.exe").arg(path).arg("/grant").arg(format!("*{id}:(X,RA,RC,S)")).arg("/Q").creation_flags(0x08000000).output();
+  }
+  let low=std::process::Command::new("icacls.exe").arg(root).arg("/setintegritylevel").arg("(OI)(CI)L").arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
+  if !low.status.success(){return Err("无法设置工作区的隔离运行权限".into());}
   std::fs::create_dir_all(root.join(".shellpilot")).map_err(|e|e.to_string())?;Ok(())
  }
  pub fn release(root:&Path)->Result<(),String>{
   let sid=profile(root)?;let id=sid_string(sid.0)?;
   let out=std::process::Command::new("icacls.exe").arg(root).arg("/remove:g").arg(format!("*{id}")).arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
-  if !out.status.success(){return Err("工作区沙箱权限清理失败".into());}Ok(())
+  if !out.status.success(){return Err("工作区沙箱权限清理失败".into());}
+  for path in ancestor_paths(root){let _=std::process::Command::new("icacls.exe").arg(path).arg("/remove:g").arg(format!("*{id}")).arg("/Q").creation_flags(0x08000000).output();}
+  let mut journal=crate::load_json_or("workspace-acl.json",json!({}));let key=root.to_string_lossy().to_string();
+  if let Some(label)=journal[&key]["label"].as_str(){restore_integrity(root,label)?;}
+  if let Some(object)=journal.as_object_mut(){object.remove(&key);}crate::save_json("workspace-acl.json",&journal);
+  Ok(())
+ }
+ fn ancestor_paths(root:&Path)->Vec<PathBuf>{
+  let home=std::env::var_os("USERPROFILE").map(PathBuf::from);let mut paths=Vec::new();let mut parent=root.parent();
+  while let Some(path)=parent{
+   if path.parent().is_none(){break;}
+   paths.push(path.to_path_buf());if home.as_deref()==Some(path){break;}parent=path.parent();
+  }paths
+ }
+ fn integrity(root:&Path)->Result<String,String>{
+  let mut length=0;unsafe{GetFileSecurityW(wide(root.as_os_str()).as_ptr(),0x10,null_mut(),0,&mut length);}
+  if length==0{return Err(error("工作区标记读取失败"));}
+  let mut buffer=vec![0usize;(length as usize+7)/8];
+  checked(unsafe{GetFileSecurityW(wide(root.as_os_str()).as_ptr(),0x10,buffer.as_mut_ptr().cast(),length,&mut length)},"工作区标记读取失败")?;
+  let mut text=null_mut();checked(unsafe{ConvertSecurityDescriptorToStringSecurityDescriptorW(buffer.as_ptr().cast(),1,0x10,&mut text,null_mut())},"工作区标记转换失败")?;
+  let mut n=0;unsafe{while *text.add(n)!=0{n+=1;}}
+  let value=unsafe{String::from_utf16_lossy(std::slice::from_raw_parts(text,n))};unsafe{LocalFree(text.cast());}Ok(value)
+ }
+ fn restore_integrity(root:&Path,label:&str)->Result<(),String>{
+  let mut descriptor=null_mut();
+  let label=if label.is_empty(){"S:"}else{label};
+  checked(unsafe{ConvertStringSecurityDescriptorToSecurityDescriptorW(w(label).as_ptr(),1,&mut descriptor,null_mut())},"工作区标记恢复失败")?;
+  let result=checked(unsafe{SetFileSecurityW(wide(root.as_os_str()).as_ptr(),0x10,descriptor)},"工作区标记恢复失败");
+  unsafe{LocalFree(descriptor);}result
  }
  struct HandleGuard(Handle);
  impl Drop for HandleGuard{fn drop(&mut self){if self.0!=0{unsafe{CloseHandle(self.0);}}}}
