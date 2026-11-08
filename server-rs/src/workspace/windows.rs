@@ -110,6 +110,9 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn SetFileSecurityW(path:*const u16,information:u32,descriptor:*const c_void)->i32;
   fn ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor:*const c_void,revision:u32,information:u32,text:*mut *mut u16,length:*mut u32)->i32;
   fn ConvertStringSecurityDescriptorToSecurityDescriptorW(text:*const u16,revision:u32,descriptor:*mut *mut c_void,size:*mut u32)->i32;
+  fn OpenProcessToken(process:Handle,access:u32,token:*mut Handle)->i32;
+  fn GetTokenInformation(token:Handle,class:u32,buffer:*mut c_void,length:u32,needed:*mut u32)->i32;
+  fn EqualSid(first:Sid,second:Sid)->i32;
  }
  #[link(name="kernel32")]extern "system"{fn LocalFree(value:*mut c_void)->*mut c_void;}
  fn wide(s:&std::ffi::OsStr)->Vec<u16>{s.encode_wide().chain(Some(0)).collect()}
@@ -268,6 +271,18 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   if !network_sid.is_null(){unsafe{LocalFree(network_sid);}}
   if started==0{let _=std::fs::remove_file(&script);return Err(error("隔离命令启动失败"));}
   let process=HandleGuard(pi.process);let thread=HandleGuard(pi.thread);
+  let identity=(||->Result<(),String>{
+   let mut raw=0;checked(unsafe{OpenProcessToken(process.0,8,&mut raw)},"沙箱身份读取失败")?;let token=HandleGuard(raw);
+   let mut flag=0u32;let mut needed=0;
+   checked(unsafe{GetTokenInformation(token.0,29,(&mut flag as *mut u32).cast(),4,&mut needed)},"沙箱类型读取失败")?;
+   if flag!=1{return Err("命令未在AppContainer中，已拒绝执行".into());}
+   let mut bytes=0;unsafe{GetTokenInformation(token.0,31,null_mut(),0,&mut bytes);}
+   let mut data=vec![0usize;(bytes as usize+7)/8];
+   checked(unsafe{GetTokenInformation(token.0,31,data.as_mut_ptr().cast(),bytes,&mut bytes)},"沙箱目录身份读取失败")?;
+   let actual=unsafe{*(data.as_ptr() as *const Sid)};
+   if unsafe{EqualSid(actual,sid.0)}==0{return Err("命令与工作区沙箱身份不匹配".into());}Ok(())
+  })();
+  if let Err(error)=identity{unsafe{TerminateProcess(process.0,1);}return Err(error);}
   if let Err(e)=checked(unsafe{AssignProcessToJobObject(job.0,process.0)},"隔离进程组绑定失败"){unsafe{TerminateProcess(process.0,1);}return Err(e);}
   if unsafe{ResumeThread(thread.0)}==u32::MAX{return Err(error("命令运行失败"));}
   drop(out_write);drop(err_write);drop(in_read);

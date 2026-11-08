@@ -22,6 +22,7 @@ try{
  const action=async(name,args)=>api('/workspace/action','POST',{name,arguments:args});
  const execute=command=>action('workspace_exec',{command,timeout:45000});
  await api('/workspace','PUT',{directory:root,enabled:true,network:false});
+ console.log(execFileSync('icacls.exe',[root],{encoding:'utf8',timeout:5000}));
  const crossSite=await fetch(base+'/api/workspace/action',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://outside.example.com'},body:JSON.stringify({name:'workspace_list',arguments:{}})});
  assert.equal(crossSite.status,403,'Unrelated web pages must not invoke local workspace tools');
  assert.equal((await api('/workspace')).enabled,true);
