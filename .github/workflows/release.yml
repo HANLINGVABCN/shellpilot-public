@@ -81,17 +81,17 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：SSH 终端、性能监控、文件管理、AI、MCP、长期记忆与任务队列。
+          ShellPilot 数据保留修复：读取本机文件失败时不再使用空数据，也不允许默认配置覆盖原文件。
 
-          AI 对话移除整行阅读提示和“回到最新”文字。右侧只有一个小向下箭头，点击返回底部并恢复跟随新输出；向上浏览时保持当前位置。
+          改进安装后的当前用户启动方式，保存使用临时文件和原子替换；真实数据错误在页面内处理，重新读取后恢复服务器和对话。
 
-          Windows 安装包、EXE 和 Android APK 在 GitHub 构建并校验。APK 沿用固定 ShellPilot 品牌签名，支持同包名更新。
+          已检查数据损坏、文件访问失败与恢复，并验证连续覆盖安装保留服务器、模型、对话和记忆。原数据目录不变，APK 沿用固定 ShellPilot 签名。
 
-          Windows 首次安装使用 ShellPilot-Windows-Setup.exe；便携更新替换 shellpilot-app.exe；Android 使用 ShellPilot-arm64.apk。
+          聊天仍只保留侧边向下箭头。公开 ShellPilot 不包含域名转发模块。
 
-          应用标识和数据格式保持一致，可继续读取已有配置。
+          Windows 安装使用 ShellPilot-Windows-Setup.exe；便携更新替换 shellpilot-app.exe；Android 使用 ShellPilot-arm64.apk。
 
-          发布文件直接复制已经完成的构建产物，不重新编译或重新签名。
+          发布直接复制通过检查的构建文件，不重新编译或重新签名。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release
