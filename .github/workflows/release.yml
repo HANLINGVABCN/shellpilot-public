@@ -13,7 +13,7 @@ on:
       title:
         description: 'Release title'
         required: true
-        default: 'ShellPilot · 2026-11-07 更新'
+        default: 'ShellPilot'
 permissions:
   contents: write
   actions: read
@@ -81,7 +81,7 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot 公开基础版：恢复到加入域名转发前的功能范围，保留 SSH 终端、性能监控、文件管理、AI、MCP、长期记忆与任务队列。
+          ShellPilot：SSH 终端、性能监控、文件管理、AI、MCP、长期记忆与任务队列。
 
           AI 对话移除整行阅读提示和“回到最新”文字。右侧只有一个小向下箭头，点击返回底部并恢复跟随新输出；向上浏览时保持当前位置。
 
@@ -89,7 +89,7 @@ jobs:
 
           Windows 首次安装使用 ShellPilot-Windows-Setup.exe；便携更新替换 shellpilot-app.exe；Android 使用 ShellPilot-arm64.apk。
 
-          本仓库是独立公开快照，源码及提交历史不含域名转发模块。公开版与私有转发版使用同一应用标识和数据格式，可继续读取已有配置。
+          应用标识和数据格式保持一致，可继续读取已有配置。
 
           发布文件直接复制已经完成的构建产物，不重新编译或重新签名。
           NOTES

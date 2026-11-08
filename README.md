@@ -21,8 +21,6 @@
 
 ShellPilot 是运行在自己电脑或安卓设备上的 SSH 工作台。你可以直接操作终端，也可以让内置 AI 或支持 MCP 的外部 AI 查询服务器、分析日志、执行命令和修改配置。应用使用 Rust 后端与 Tauri 2，安装版不需要额外安装 Node.js。
 
-这是公开基础版，功能恢复到加入自定义域名转发之前，保留终端、性能监控、文件管理、AI、MCP、记忆与任务队列。
-
 ## 下载与安装
 
 从 [Releases 最新版](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest) 下载。打开 **Assets** 后，按用途选择：
