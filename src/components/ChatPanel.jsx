@@ -155,11 +155,14 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [memoryNote,setMemoryNote]=useState('');
   const [queueError,setQueueError]=useState('');
   const jobStateRef=useRef({busy:false,paused:false,queue:[]});
-  const applyJobState=(state)=>{
-    if(state.revision && jobStateRef.current.revision && state.revision<jobStateRef.current.revision)return;
+  const applyJobState=(state,authoritative=false)=>{
+    const sameServer=!state.processId||!jobStateRef.current.processId||state.processId===jobStateRef.current.processId;
+    if(sameServer&&state.revision && jobStateRef.current.revision && state.revision<jobStateRef.current.revision)return false;
+    if(authoritative||!sameServer)streamActive.current=!!state.busy||!!state.activeId;
     jobStateRef.current=state;
     setBusy(!!state.busy||!!state.activeId||streamActive.current);
     setPaused(!!state.paused);setPauseReady(!!state.pauseReady);setQueue(state.queue||[]);
+    return true;
   };
   const listRef = useRef(null);
   const followBottomRef = useRef(true);
@@ -207,9 +210,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   useEffect(() => { loadModels(); loadChats(); }, []);
   useEffect(() => {
     const restore = () => api('/agent/status').then((status) => {
-      jobStateRef.current={...jobStateRef.current,revision:0};
-      streamActive.current=!!status.busy||!!status.activeId;
-      applyJobState(status);
+      if(!applyJobState(status,true))return;
       if ((status.busy || status.queue?.length) && status.chatId) {
         setChatId(status.chatId);
         setMsgs(storedToDisplay(status.messages || []));

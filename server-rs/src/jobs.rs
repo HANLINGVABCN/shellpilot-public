@@ -11,7 +11,7 @@ pub struct Job {pub id:String,pub text:String,pub chat_id:String,pub scope:Vec<S
 pub fn persist(agent:&crate::AgentState) {
     crate::save_json("agent-jobs.json",&json!({"queue":agent.queue,"active":agent.active_job,"paused":agent.paused}));
 }
-pub fn status(agent:&crate::AgentState)->Value {json!({"type":"chat-job-state","revision":STATE_REVISION.fetch_add(1,Ordering::SeqCst),"busy":agent.busy||agent.active_job.is_some(),"paused":agent.paused,"pauseReady":agent.pause_ready,"queue":agent.queue,"activeId":agent.active_job.as_ref().map(|job|&job.id),"chatId":agent.chat_id})}
+pub fn status(agent:&crate::AgentState)->Value {json!({"type":"chat-job-state","processId":std::process::id(),"revision":STATE_REVISION.fetch_add(1,Ordering::SeqCst),"busy":agent.busy||agent.active_job.is_some(),"paused":agent.paused,"pauseReady":agent.pause_ready,"queue":agent.queue,"activeId":agent.active_job.as_ref().map(|job|&job.id),"chatId":agent.chat_id})}
 pub fn repair_history(messages:Vec<Value>)->Vec<Value>{
     let mut output=Vec::new();let mut index=0;
     while index<messages.len(){
