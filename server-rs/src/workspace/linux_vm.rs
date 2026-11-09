@@ -28,13 +28,14 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  let disk=internal.join("linux-disk.qcow2");if !tokio::fs::try_exists(&disk).await.unwrap_or(false){tokio::fs::copy(guest.join("base.qcow2"),&disk).await.map_err(|e|e.to_string())?;}
  let probe=std::net::TcpListener::bind(("127.0.0.1",0)).map_err(|e|e.to_string())?;let port=probe.local_addr().map_err(|e|e.to_string())?.port();drop(probe);
  let proxy=if network{Some(super::linux_proxy::start().await?)}else{None};
+ let diagnostics=std::fs::File::create(internal.join("linux-runtime.log")).map_err(|e|e.to_string())?;
  let mut command=tokio::process::Command::new(qemu.join("qemu-system-x86_64.exe"));
  command.args(["-machine","q35","-accel","tcg","-cpu","max","-m","384","-smp","2","-display","none","-monitor","none","-serial","file:linux-boot.log","-no-reboot","-L"]).arg(&qemu)
   .arg("-kernel").arg(guest.join("vmlinuz")).arg("-initrd").arg(guest.join("initramfs"))
   .arg("-append").arg(format!("console=ttyS0 modules=virtio_pci,virtio_blk,ext4 rootfstype=ext4 root=/dev/vda rw init=/sbin/shellpilot-init spkey={key_b64}"))
-  .arg("-drive").arg(format!("file={},format=qcow2,if=virtio",disk.to_string_lossy().replace(',',",,")))
+  .arg("-drive").arg("file=linux-disk.qcow2,format=qcow2,if=virtio")
   .args(["-device","virtio-net-pci,romfile=,netdev=n","-netdev"]).arg(format!("user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22{}",if proxy.is_some(){",guestfwd=tcp:10.0.2.100:3128-chardev:internet"}else{""}))
-  .current_dir(&internal).env_clear().stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).kill_on_drop(true);
+  .current_dir(&internal).env_clear().stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::from(diagnostics)).kill_on_drop(true);
  if let Some(proxy)=&proxy{command.arg("-chardev").arg(format!("socket,id=internet,host=127.0.0.1,port={},reconnect-ms=1000",proxy.port));}
  for name in ["SystemRoot","WINDIR","TEMP","TMP"]{if let Some(value)=std::env::var_os(name){command.env(name,value);}}
  #[cfg(windows)]command.creation_flags(0x08000000);
@@ -42,7 +43,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  #[cfg(windows)]let job=match super::windows::vm_job(&child){Ok(job)=>job,Err(error)=>{let _=child.kill().await;return Err(error);}};
  let mut vm=Vm{child,key,port,root:root.to_owned(),network,proxy,#[cfg(windows)]_job:job};
  let deadline=tokio::time::Instant::now()+Duration::from_secs(90);
- loop{if vm.child.try_wait().map_err(|e|e.to_string())?.is_some(){return Err("Linux运行器提前退出，请检查环境安装".into());}
+ loop{if vm.child.try_wait().map_err(|e|e.to_string())?.is_some(){let log=std::fs::read_to_string(internal.join("linux-runtime.log")).unwrap_or_default();return Err(format!("Linux运行器提前退出：{}",log.chars().take(1500).collect::<String>()));}
   if connect(&vm).await.is_ok(){return Ok(vm);}if tokio::time::Instant::now()>deadline{vm.stop().await;return Err("Linux环境启动超时".into());}tokio::time::sleep(Duration::from_millis(500)).await;
  }
 }

@@ -20,6 +20,10 @@ try{for(const mobile of [false,true]){
   await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
  });
  await page.goto('http://127.0.0.1:4173');
+ await page.waitForSelector('#app');
+ if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'工作台',exact:true}).click();
+ else await page.locator('.nav').getByRole('button',{name:'工作台',exact:true}).click();
+ console.log('Workspace tab labels:',await page.locator('.tabs').innerText());
  await page.locator('.tabs').getByRole('button',{name:'📁 工作区',exact:true}).waitFor();
  assert.equal(await page.locator('.subtabs').count(),0,'Workspace has no server subtabs');assert.equal(await page.locator('.sidebar').getByText('本机工作区',{exact:true}).count(),0);
  await page.getByLabel('随软件启动 Linux 环境').check();await page.getByRole('button',{name:'保存工作区',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.workspace-saving')===null);assert(config.autoStart);

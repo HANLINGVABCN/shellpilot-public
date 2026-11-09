@@ -62,7 +62,7 @@ digest=4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de
 if test "$arch" = x86_64;then digest=cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012;fi
 printf '%s  %s/assets/rootfs.tar.gz\n' "$digest" "$work"|sha256sum --check
 sdk="$ANDROID_HOME/platforms/android-35/android.jar";build="$ANDROID_HOME/build-tools/35.0.0"
-javac -source 8 -target 8 -bootclasspath "$sdk" -d "$work/classes" runtime/android/RuntimeService.java
+javac --release 8 -classpath "$sdk" -d "$work/classes" runtime/android/RuntimeService.java
 "$build/d8" --lib "$sdk" --min-api 26 --output "$work" $(find "$work/classes" -name '*.class')
 "$build/aapt2" link -I "$sdk" --manifest runtime/android/AndroidManifest.xml -A "$work/assets" -o "$work/base.apk"
 cp "$work/base.apk" "$work/unsigned.apk"

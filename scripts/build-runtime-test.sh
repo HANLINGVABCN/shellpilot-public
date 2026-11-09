@@ -2,7 +2,7 @@
 set -euo pipefail
 work=runtime-build/instrumentation;mkdir -p "$work/classes"
 sdk="$ANDROID_HOME/platforms/android-35/android.jar";tools="$ANDROID_HOME/build-tools/35.0.0"
-javac -source 8 -target 8 -bootclasspath "$sdk" -d "$work/classes" runtime/android/RuntimeTest.java
+javac --release 8 -classpath "$sdk" -d "$work/classes" runtime/android/RuntimeTest.java
 "$tools/d8" --lib "$sdk" --min-api 26 --output "$work" $(find "$work/classes" -name '*.class')
 "$tools/aapt2" link -I "$sdk" --manifest runtime/android/TestManifest.xml -o "$work/test.apk"
 (cd "$work" && zip -q test.apk classes.dex)
