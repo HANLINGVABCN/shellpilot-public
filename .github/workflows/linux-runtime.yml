@@ -11,6 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils qemu-system-x86 e2fsprogs
       - run: bash scripts/build-linux-guest.sh
+      - run: python3 scripts/verify-linux-guest.py
       - uses: actions/upload-artifact@v4
         with:
           name: linux-guest
@@ -31,3 +32,38 @@ jobs:
         with:
           name: linux-qemu
           path: runtime-build/ShellPilot-QEMU-Windows.tar.gz
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [aarch64, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+      - name: Build signed Android Linux component
+        env:
+          KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+          CERT_SHA256: ${{ vars.SHELLPILOT_ANDROID_CERT_SHA256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > /tmp/runtime-signing.p12
+          trap 'rm -f /tmp/runtime-signing.p12' EXIT
+          export SIGNING_KEY_PATH=/tmp/runtime-signing.p12
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.0.12077973"
+          bash scripts/build-android-runtime.sh '${{ matrix.arch }}'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-android-${{ matrix.arch }}
+          path: |
+            runtime-build/ShellPilot-Linux-Android-${{ matrix.arch }}.apk
+            runtime-build/ShellPilot-Linux-Android-${{ matrix.arch }}-sources.tar.gz

@@ -33,7 +33,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
   .arg("-kernel").arg(guest.join("vmlinuz")).arg("-initrd").arg(guest.join("initramfs"))
   .arg("-append").arg(format!("console=ttyS0 root=/dev/vda rw init=/sbin/shellpilot-init spkey={key_b64}"))
   .arg("-drive").arg(format!("file={},format=qcow2,if=virtio",disk.to_string_lossy().replace(',',",,")))
-  .args(["-device","virtio-net-pci,netdev=n","-netdev"]).arg(format!("user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22{}",if proxy.is_some(){",guestfwd=tcp:10.0.2.100:3128-chardev:internet"}else{""}))
+  .args(["-device","virtio-net-pci,romfile=,netdev=n","-netdev"]).arg(format!("user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22{}",if proxy.is_some(){",guestfwd=tcp:10.0.2.100:3128-chardev:internet"}else{""}))
   .current_dir(&internal).env_clear().stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).kill_on_drop(true);
  if let Some(proxy)=&proxy{command.arg("-chardev").arg(format!("socket,id=internet,host=127.0.0.1,port={},reconnect-ms=1000",proxy.port));}
  for name in ["SystemRoot","WINDIR","TEMP","TMP"]{if let Some(value)=std::env::var_os(name){command.env(name,value);}}

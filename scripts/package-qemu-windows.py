@@ -17,6 +17,7 @@ for name in ['bios-256k.bin','vgabios-stdvga.bin','kvmvapic.bin','efi-e1000.rom'
     if source.is_file():shutil.copy2(source,dest/name)
 for directory in (prefix/'share/licenses').glob('*qemu*'):
     shutil.copytree(directory,dest/'licenses'/directory.name,dirs_exist_ok=True)
+shutil.copytree(prefix/'share/licenses',dest/'dependency-licenses',dirs_exist_ok=True)
 with tarfile.open('runtime-build/ShellPilot-QEMU-Windows.tar.gz','w:gz') as archive:
     for file in dest.rglob('*'):
         if file.is_file():archive.add(file,arcname=file.relative_to(dest),recursive=False)
