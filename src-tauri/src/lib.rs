@@ -7,6 +7,10 @@ use tauri::Manager;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
+#[cfg(target_os="android")]
+#[no_mangle]
+pub extern "system" fn Java_app_shellpilot_client_MainActivity_registerWorkspaceBridge(env:jni::JNIEnv,activity:jni::objects::JObject){let _=shellpilot_server::workspace::android::initialize(&env,&activity);}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

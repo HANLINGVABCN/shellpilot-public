@@ -12,7 +12,10 @@ while True:
     except Exception:
         if time.time()>deadline:raise
         time.sleep(.3)
-api('/workspace','PUT',{'directory':'/workspace','enabled':True,'engine':'linux','network':False})
+try:api('/workspace','PUT',{'directory':'/workspace','enabled':True,'engine':'linux','network':False})
+except Exception:
+    print(subprocess.check_output(['adb','logcat','-d','-t','120'],text=True))
+    raise
 api('/workspace/action','POST',{'name':'workspace_write','arguments':{'path':'main-fixture.txt','content':'main-app-file'}})
 result=api('/workspace/action','POST',{'name':'workspace_exec','arguments':{'command':'cat main-fixture.txt; printf output > main-output.txt','timeout':30000}})
 assert result['exitCode']==0 and 'main-app-file' in result['stdout'],result

@@ -91,6 +91,7 @@ const mainFile=path.join(javaRoot,'MainActivity.kt');
 if(fs.existsSync(mainFile)){
  let source=fs.readFileSync(mainFile,'utf8');
  if(!source.includes('fun workspaceRuntime'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  fun workspaceRuntime(request: String): String = WorkspaceBridge.request(this, request)\n');
+ if(!source.includes('external fun registerWorkspaceBridge'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  private external fun registerWorkspaceBridge()\n').replace('super.onCreate(savedInstanceState)','super.onCreate(savedInstanceState)\n    registerWorkspaceBridge()');
  fs.writeFileSync(mainFile,source);
 }
 let appManifest=fs.readFileSync(manifestXml,'utf8');

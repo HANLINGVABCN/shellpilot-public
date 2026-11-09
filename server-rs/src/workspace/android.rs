@@ -1,13 +1,14 @@
 use serde_json::{Value,json};
+#[cfg(target_os="android")]static BRIDGE:std::sync::Mutex<Option<(std::sync::Arc<jni::JavaVM>,jni::objects::GlobalRef)>>=std::sync::Mutex::new(None);
+#[cfg(target_os="android")]pub fn initialize(env:&jni::JNIEnv,activity:&jni::objects::JObject)->Result<(),String>{let vm=std::sync::Arc::new(env.get_java_vm().map_err(|e|e.to_string())?);let activity=env.new_global_ref(activity).map_err(|e|e.to_string())?;*BRIDGE.lock().map_err(|e|e.to_string())?=Some((vm,activity));Ok(())}
 pub async fn request(body:Value)->Result<Value,String>{
  #[cfg(target_os="android")]{
   tokio::task::spawn_blocking(move||{
-   let context=ndk_context::android_context();
-   let vm=unsafe{jni::JavaVM::from_raw(context.vm().cast())}.map_err(|e|e.to_string())?;
+   let started=std::time::Instant::now();
+   let(vm,activity)=loop{if let Some(context)=BRIDGE.lock().map_err(|e|e.to_string())?.as_ref(){break (context.0.clone(),context.1.clone());}if started.elapsed()>std::time::Duration::from_secs(5){return Err("安卓工作区接口尚未就绪，请重新打开页面".into());}std::thread::sleep(std::time::Duration::from_millis(50));};
    let mut env=vm.attach_current_thread().map_err(|e|e.to_string())?;
-   let activity=unsafe{jni::objects::JObject::from_raw(context.context().cast())};
    let input=env.new_string(body.to_string()).map_err(|e|e.to_string())?;let object=jni::objects::JObject::from(input);
-   let result=env.call_method(&activity,"workspaceRuntime","(Ljava/lang/String;)Ljava/lang/String;",&[jni::objects::JValue::Object(&object)]).map_err(|e|format!("安卓工作区接口不可用：{e}"))?.l().map_err(|e|e.to_string())?;
+   let result=env.call_method(activity.as_obj(),"workspaceRuntime","(Ljava/lang/String;)Ljava/lang/String;",&[jni::objects::JValue::Object(&object)]).map_err(|e|format!("安卓工作区接口不可用：{e}"))?.l().map_err(|e|e.to_string())?;
    let text:String=env.get_string(&jni::objects::JString::from(result)).map_err(|e|e.to_string())?.into();let value:Value=serde_json::from_str(&text).map_err(|e|e.to_string())?;
    if let Some(error)=value["error"].as_str(){Err(error.into())}else{Ok(value)}
   }).await.map_err(|e|e.to_string())?
