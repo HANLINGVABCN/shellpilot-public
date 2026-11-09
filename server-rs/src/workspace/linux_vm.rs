@@ -6,7 +6,11 @@ use russh::{client,ChannelMsg};
 use russh::keys::PublicKeyBase64;
 
 pub struct Vm{pub child:tokio::process::Child,key:Arc<russh::keys::key::KeyPair>,port:u16,root:PathBuf,network:bool,proxy:Option<super::linux_proxy::InternetProxy>,#[cfg(windows)]_job:super::windows::VmJob}
-impl Vm{pub async fn stop(&mut self){let _=self.child.kill().await;}}
+impl Vm{pub async fn stop(&mut self){
+ let shutdown=async{let handle=connect(self).await?;let mut channel=handle.channel_open_session().await.map_err(|e|e.to_string())?;channel.exec(true,"sync; /sbin/poweroff -f").await.map_err(|e|e.to_string())?;while let Some(message)=channel.wait().await{if matches!(message,ChannelMsg::Close){break;}}Ok::<(),String>(())};
+ let _=tokio::time::timeout(Duration::from_secs(5),shutdown).await;
+ if tokio::time::timeout(Duration::from_secs(5),self.child.wait()).await.is_err(){let _=self.child.kill().await;}
+}}
 struct Guest{expected:String}
 #[async_trait::async_trait]impl client::Handler for Guest{
  type Error=russh::Error;
@@ -108,7 +112,7 @@ pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:boo
  let v=vm.as_ref().unwrap();let input=root.join(".shellpilot/linux-input.tar");let output=root.join(".shellpilot/linux-output.tar");
  let source=root.to_owned();let input_copy=input.clone();let baseline=tokio::task::spawn_blocking(move||pack(&source,&input_copy)).await.map_err(|e|e.to_string())??;
  successful(command(v,"mkdir -p /workspace; find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' +; tar -xf - -C /workspace",Some(&input),None,120000).await?)?;
- let script=format!("cd /workspace && {} /bin/sh -c {}",if network{"http_proxy=http://10.0.2.100:3128 https_proxy=http://10.0.2.100:3128 HTTP_PROXY=http://10.0.2.100:3128 HTTPS_PROXY=http://10.0.2.100:3128"}else{""},crate::util::shq(script));
+ let script=format!("cd /workspace && {} /bin/sh -c {}; result=$?; sync; exit $result",if network{"http_proxy=http://10.0.2.100:3128 https_proxy=http://10.0.2.100:3128 HTTP_PROXY=http://10.0.2.100:3128 HTTPS_PROXY=http://10.0.2.100:3128"}else{""},crate::util::shq(script));
  let cancel=st.agent.lock().await.cancel.as_ref().map(|s|s.subscribe());let mut generation=st.workspace.generation.subscribe();
  let result=tokio::select!{
   result=command(v,&script,None,None,timeout)=>result,
@@ -147,6 +151,6 @@ pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocke
   _=generation.changed()=>break
  }}
  let _=channel.close().await;st.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);
- let vm=st.workspace.linux.vm.lock().await;if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .",None,Some(&path),120000).await.is_ok(){let _=tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await;}}
+ let vm=st.workspace.linux.vm.lock().await;if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),120000).await.is_ok(){let _=tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await;}}
  st.workspace.linux.touch();Ok(())
 }

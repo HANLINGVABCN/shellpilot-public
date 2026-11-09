@@ -29,6 +29,7 @@ pub fn run() {
 
             let app_handle=app.handle().clone();
             let st=shellpilot_server::AppState::new();
+            app.manage(st.clone());
             #[cfg(target_os="windows")]
             {*st.folder_picker.write().unwrap()=Some(std::sync::Arc::new(shellpilot_server::workspace::windows::pick_folder));}
             *st.external_opener.write().unwrap()=Some(std::sync::Arc::new(move|url|app_handle.opener().open_url(url,None::<&str>).map_err(|error|format!("无法打开系统浏览器：{error}"))));
@@ -110,6 +111,7 @@ pub fn run() {
                                 }
                             }
                             "quit" => {
+                                if let Some(state)=app.try_state::<std::sync::Arc<shellpilot_server::AppState>>(){let st=state.inner().clone();tauri::async_runtime::block_on(st.workspace.linux.stop());}
                                 app.exit(0);
                             }
                             _ => {}
@@ -168,7 +170,7 @@ pub fn run() {
                 if close_to_tray {
                     api.prevent_close();
                     let _ = _window.hide();
-                }
+                } else if let Some(state)=_window.app_handle().try_state::<std::sync::Arc<shellpilot_server::AppState>>(){let st=state.inner().clone();tauri::async_runtime::block_on(st.workspace.linux.stop());}
             }
             }
         })
