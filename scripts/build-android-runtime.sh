@@ -37,7 +37,14 @@ Checking for HAVE_MREMAP: OK
 Checking for HAVE_INCOHERENT_MMAP: OK
 Checking getconf large file support flags work: OK
 ANSWERS
-./configure --prefix="$work/talloc" --disable-python --disable-rpath --cross-compile --cross-answers=answers
+configured=false
+for attempt in 1 2 3;do
+ if ./configure --prefix="$work/talloc" --disable-python --disable-rpath --cross-compile --cross-answers=answers;then configured=true;break;fi
+ # Unknown optional runtime optimizations stay disabled for the Android cross build.
+ grep ': UNKNOWN' answers || exit 1
+ sed -i 's/: UNKNOWN$/: NO/' answers
+done
+test "$configured" = true
 make -j2
 find bin/default -name 'talloc*.o' -print0 | xargs -0 "$AR" rcs "$work/libtalloc.a"
 cp talloc.h "$work/"
