@@ -43,7 +43,7 @@ export default function WorkspacePanel({onClose,onSettings,fullPage=false}){
  const [config,setConfig]=useState({}),[entries,setEntries]=useState([]),[path,setPath]=useState(''),[editing,setEditing]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [terminal,setTerminal]=useState(false);
  const load=async()=>{const value=await api('/workspace');setConfig(value);if(value.enabled){const files=await api('/workspace/files?path='+encodeURIComponent(path));setEntries(files.entries||[]);}};
- useEffect(()=>{load().catch(e=>setError(e.message));const off=ws.on('workspace-changed',()=>load().catch(e=>setError(e.message)));return off;},[path]);
+ useEffect(()=>{load().catch(e=>setError(e.message));const off=ws.on('workspace-changed',()=>load().catch(e=>setError(e.message)));const failed=ws.on('workspace-error',message=>setError(message.error));return()=>{off();failed();};},[path]);
  const act=async fn=>{setBusy(true);setError('');try{await fn();await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
  const relative=name=>path?path+'/'+name:name;
  const download=name=>act(async()=>{const response=await fetch('/api/workspace/download?path='+encodeURIComponent(relative(name)));if(!response.ok)throw Error((await response.json()).error);const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});

@@ -5,8 +5,9 @@ use tokio::io::{AsyncReadExt,AsyncWriteExt};
 use russh::{client,ChannelMsg};
 use russh::keys::PublicKeyBase64;
 
-pub struct Vm{pub child:tokio::process::Child,key:Arc<russh::keys::key::KeyPair>,port:u16,root:PathBuf,network:bool,proxy:Option<super::linux_proxy::InternetProxy>,#[cfg(windows)]_job:super::windows::VmJob}
+pub struct Vm{pub child:tokio::process::Child,key:Arc<russh::keys::key::KeyPair>,port:u16,root:PathBuf,network:bool,proxy:Option<super::linux_proxy::InternetProxy>,terminal_baseline:Option<std::collections::HashMap<PathBuf,String>>,#[cfg(windows)]_job:super::windows::VmJob}
 impl Vm{pub async fn stop(&mut self){
+ if let Some(baseline)=self.terminal_baseline.take(){let path=self.root.join(".shellpilot/terminal-output.tar");if command(self,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),30000).await.is_ok(){let root=self.root.clone();let _=tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await;}}
  let shutdown=async{let handle=connect(self).await?;let mut channel=handle.channel_open_session().await.map_err(|e|e.to_string())?;channel.exec(true,"sync; /sbin/poweroff -f").await.map_err(|e|e.to_string())?;while let Some(message)=channel.wait().await{if matches!(message,ChannelMsg::Close){break;}}Ok::<(),String>(())};
  let _=tokio::time::timeout(Duration::from_secs(5),shutdown).await;
  if tokio::time::timeout(Duration::from_secs(5),self.child.wait()).await.is_err(){let _=self.child.kill().await;}
@@ -46,7 +47,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  #[cfg(windows)]command.creation_flags(0x08000000);
  let mut child=command.spawn().map_err(|e|format!("无法启动Linux运行器：{e}"))?;
  #[cfg(windows)]let job=match super::windows::vm_job(&child){Ok(job)=>job,Err(error)=>{let _=child.kill().await;return Err(error);}};
- let mut vm=Vm{child,key,port,root:root.to_owned(),network,proxy,#[cfg(windows)]_job:job};
+ let mut vm=Vm{child,key,port,root:root.to_owned(),network,proxy,terminal_baseline:None,#[cfg(windows)]_job:job};
  let deadline=tokio::time::Instant::now()+Duration::from_secs(90);
  loop{if vm.child.try_wait().map_err(|e|e.to_string())?.is_some(){let log=std::fs::read_to_string(internal.join("linux-runtime.log")).unwrap_or_default();return Err(format!("Linux运行器提前退出：{}",log.chars().take(1500).collect::<String>()));}
   let connection=connect(&vm).await;if connection.is_ok(){return Ok(vm);}if tokio::time::Instant::now()>deadline{let error=connection.err().unwrap_or_default();vm.stop().await;return Err(format!("Linux环境启动超时：{error}"));}tokio::time::sleep(Duration::from_millis(500)).await;
@@ -143,7 +144,7 @@ pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocke
  channel.request_pty(true,"xterm-256color",100,28,0,0,&[]).await.map_err(|e|e.to_string())?;channel.request_shell(true).await.map_err(|e|e.to_string())?;
  channel.data(&b"cd /workspace\r"[..]).await.map_err(|e|e.to_string())?;
  if v.network{channel.data(&b"export http_proxy=http://10.0.2.100:3128 https_proxy=http://10.0.2.100:3128\r"[..]).await.map_err(|e|e.to_string())?;}
- st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);drop(vm);
+ vm.as_mut().unwrap().terminal_baseline=Some(baseline.clone());st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);drop(vm);
  let (mut output,mut input)=socket.split();let mut generation=st.workspace.generation.subscribe();
  loop{tokio::select!{
   message=input.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let _=channel.data(text.as_bytes()).await;st.workspace.linux.touch();},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
@@ -151,6 +152,6 @@ pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocke
   _=generation.changed()=>break
  }}
  let _=channel.close().await;st.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);
- let vm=st.workspace.linux.vm.lock().await;if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),120000).await.is_ok(){let _=tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await;}}
+ let mut vm=st.workspace.linux.vm.lock().await;if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),120000).await.is_ok(){match tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await{Ok(Ok(()))=>vm.as_mut().unwrap().terminal_baseline=None,Ok(Err(error))=>st.broadcast_all(&json!({"type":"workspace-error","error":error})),Err(error)=>st.broadcast_all(&json!({"type":"workspace-error","error":error.to_string()}))}}}
  st.workspace.linux.touch();Ok(())
 }
