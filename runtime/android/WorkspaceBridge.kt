@@ -25,7 +25,7 @@ object WorkspaceBridge {
   if(!installed)throw IllegalStateException("请先安装Linux运行组件")
   if(op=="install")body.put("op","prepare")
   val latch=CountDownLatch(1);var binder:IBinder?=null
-  activity.startForegroundService(Intent().setComponent(ComponentName(runtimePackage,"$runtimePackage.RuntimeService")))
+  if(op!="status")activity.startForegroundService(Intent().setComponent(ComponentName(runtimePackage,"$runtimePackage.RuntimeService")))
   val connection=object:ServiceConnection{
    override fun onServiceConnected(name:ComponentName,service:IBinder){binder=service;latch.countDown()}
    override fun onServiceDisconnected(name:ComponentName){binder=null}

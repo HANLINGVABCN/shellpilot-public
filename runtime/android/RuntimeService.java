@@ -19,7 +19,7 @@ public final class RuntimeService extends Service {
  private final Object prepareLock=new Object();
  private final Binder binder=new Binder(){protected boolean onTransact(int code,Parcel input,Parcel output,int flags)throws RemoteException{
   if(code!=1)return super.onTransact(code,input,output,flags);
-  enforceCallingPermission("app.shellpilot.workspace.ACCESS","ShellPilot signature required");
+  if(Binder.getCallingUid()!=android.os.Process.myUid())enforceCallingPermission("app.shellpilot.workspace.ACCESS","ShellPilot signature required");
   try{
    JSONObject body=new JSONObject(input.readString());ParcelFileDescriptor descriptor=input.readInt()==1?ParcelFileDescriptor.CREATOR.createFromParcel(input):null;
    JSONObject result;

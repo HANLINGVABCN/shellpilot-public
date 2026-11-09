@@ -4,6 +4,7 @@ try{for(const mobile of [false,true]){
  const page=await browser.newPage({viewport:{width:mobile?390:1200,height:850},userAgent:mobile?'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/141 Mobile':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141'});
  let config={directory:mobile?'/workspace':'C:\\DemoWorkspace',enabled:true,network:false,autoStart:false,engine:'linux',supported:true};let runtime={phase:'installed',installed:true,available:true,running:false,total:10000000,received:10000000,version:'alpine-test'};const files=new Map([['demo.txt','initial']]);let installedCalls=0;
  page.on('dialog',()=>{throw Error('Unexpected dialog')});
+ page.on('pageerror',error=>console.error('Workspace page error:',error.stack));
  await page.addInitScript(()=>{localStorage.setItem('shellpilot-last-view','work');localStorage.setItem('shellpilot-l1','workspace');localStorage.setItem('shellpilot-chat-open','hidden');});
  await page.routeWebSocket('**/terminal/ws',socket=>{socket.onMessage(text=>socket.send('manual terminal response\r\n'));});
  await page.route('**/api/**',async route=>{const url=new URL(route.request().url()),p=url.pathname,method=route.request().method();let value=[];
@@ -20,7 +21,7 @@ try{for(const mobile of [false,true]){
   await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
  });
  await page.goto('http://127.0.0.1:4173');
- await page.waitForSelector('#app');
+ await page.waitForSelector('#app',{state:'attached'});
  if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'工作台',exact:true}).click();
  else await page.locator('.nav').getByRole('button',{name:'工作台',exact:true}).click();
  console.log('Workspace tab labels:',await page.locator('.tabs').innerText());
