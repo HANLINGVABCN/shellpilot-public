@@ -26,4 +26,4 @@ try{
  await terminalReady;socket.close();await new Promise(resolve=>setTimeout(resolve,1200));
  await api('/workspace/linux/uninstall','POST',{});assert.equal(fs.readFileSync(path.join(root,'answer.txt'),'utf8'),'generated');assert(fs.existsSync(disk));assert.equal((await api('/workspace/linux')).installed,false);
  console.log('PASS: real Windows packaged QEMU boots on demand, pins identity, syncs files, streams terminal, stops/restarts and uninstalls while preserving files and disk');
-}catch(error){for(const name of ['linux-boot.log']){const file=path.join(root,'.shellpilot',name);if(fs.existsSync(file))console.error(fs.readFileSync(file,'utf8').slice(-12000));}throw error;}finally{backend.kill();}
+}catch(error){for(const name of ['linux-boot.log','linux-runtime.log']){const file=path.join(root,'.shellpilot',name);if(fs.existsSync(file))console.error(fs.readFileSync(file,'utf8').slice(-12000));}throw error;}finally{backend.kill();}
