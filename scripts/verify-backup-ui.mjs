@@ -17,6 +17,8 @@ try{for(const mobile of [false,true]){
  });
  await page.goto('http://127.0.0.1:4173');if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'设置',exact:true}).click();
  await page.getByRole('button',{name:'📤 导出数据',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByText('选择要导出的内容').waitFor();assert.equal(await dialog.getByRole('checkbox').count(),4);
+ const optionRects=await dialog.locator('.backup-option').evaluateAll(options=>options.map(option=>{const rect=option.getBoundingClientRect();return{x:rect.x,y:rect.y,height:rect.height,width:rect.width};}));
+ assert(optionRects.every(rect=>rect.height===optionRects[0].height),'Backup option rows stay aligned');if(!mobile)assert.equal(optionRects[0].y,optionRects[1].y,'Two columns share the same top edge');
  await dialog.getByRole('button',{name:'取消全选',exact:true}).click();assert(await dialog.getByRole('button',{name:'确认导出',exact:true}).isDisabled());
  await dialog.getByRole('button',{name:'全选',exact:true}).click();await dialog.getByLabel('服务器',{exact:true}).uncheck();await dialog.getByLabel('AI 提供商',{exact:true}).uncheck();await dialog.getByLabel('对话记录',{exact:true}).uncheck();
  await dialog.getByLabel('导出密码',{exact:true}).fill('fixture-password');const download=page.waitForEvent('download');await dialog.getByRole('button',{name:'确认导出',exact:true}).click();await download;await dialog.waitFor({state:'hidden'});assert.deepEqual(exportBody.sections,{hosts:false,providers:false,chats:false,memories:true});
