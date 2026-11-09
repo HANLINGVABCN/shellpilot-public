@@ -69,6 +69,8 @@ ShellPilot 是运行在自己电脑或安卓设备上的 SSH 工作台。你可�
 
 本机AI工作区以文件管理为主，支持独立的文件管理、终端和配置小标签。Windows和安卓统一使用按需安装的Alpine Linux，保留指定目录中的文件；支持文件夹上传、拖拽、复制移动和文本编辑。使用方法、排队取回、回答统计与记忆列表见 [工作区与聊天说明](docs/WORKSPACE.md)。
 
+![工作区文件管理与小标签](docs/screenshots/workspace-windows.png)
+
 MCP 默认关闭。开启后，在设置里选择允许外部 AI 操作的服务器，并复制自动生成的启动配置。支持 MCP STDIO 的客户端可以启动 `shellpilot-app.exe --mcp`。具体接入及示例见 [MCP 文档](docs/MCP.md)。
 
 | 工具 | 用途 |
