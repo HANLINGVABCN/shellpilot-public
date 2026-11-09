@@ -10,7 +10,7 @@ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(
 fs.mkdirSync(root);fs.mkdirSync(data);
 const outside=path.join(process.env.USERPROFILE,'Documents','shellpilot-outside-'+Date.now());
 fs.mkdirSync(outside,{recursive:true});const canary=path.join(outside,'private.txt');fs.writeFileSync(canary,'outside-fixture-must-be-protected');
-const canaryAcl=()=>execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"(Get-Acl -LiteralPath '"+canary.replaceAll("'","''")+"').Sddl"],{encoding:'utf8',timeout:5000}).trim();
+const canaryAcl=()=>execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"[IO.File]::GetAccessControl('"+canary.replaceAll("'","''")+"').GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All)"],{encoding:'utf8',timeout:5000}).trim();
 const initialAcl=canaryAcl();
 const script=path.resolve('server-rs/target/debug/shellpilot-server.exe');
 const backend=spawn(script,[],{env:{...process.env,SHELLPILOT_DATA:data,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
