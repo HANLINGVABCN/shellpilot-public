@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.os.*;
 import org.json.*;
 import java.io.*;
+import java.lang.Process;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
@@ -24,7 +25,7 @@ public final class RuntimeService extends Service {
    JSONObject result;
    try{result=dispatch(body,descriptor);}finally{if(descriptor!=null)descriptor.close();}
    output.writeNoException();output.writeString(result.toString());
-  }catch(Exception error){output.writeNoException();output.writeString(new JSONObject().put("error",error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()).toString());}return true;
+  }catch(Exception error){output.writeNoException();output.writeString("{\"error\":"+JSONObject.quote(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage())+"}");}return true;
  }};
  public IBinder onBind(Intent intent){return binder;}
  public void onCreate(){super.onCreate();root=new File(getFilesDir(),"linux");files=new File(getFilesDir(),"workspace");files.mkdirs();}

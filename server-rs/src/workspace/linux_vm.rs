@@ -79,19 +79,21 @@ fn pack(root:&Path,path:&Path)->Result<std::collections::HashMap<PathBuf,String>
   let entry=entry.map_err(|e|e.to_string())?;let p=entry.path();if entry.file_name()==".shellpilot"{continue;}super::reject_links(&p)?;
   if p.is_dir(){builder.append_dir(p.strip_prefix(root).unwrap(),&p).map_err(|e|e.to_string())?;dirs.push(p);}else{
    let mut file=super::windows::read_file(&p)?;let mut hash=sha2::Sha256::new();use sha2::Digest;let mut bytes=[0u8;65536];loop{let n=file.read(&mut bytes).map_err(|e|e.to_string())?;if n==0{break;}size+=n;if size>1024*1024*1024{return Err("单次工作区同步超过1GB，请缩小工作目录".into());}hash.update(&bytes[..n]);}
-   baseline.insert(p.strip_prefix(root).unwrap().to_owned(),format!("{:x}",hash.finalize()));builder.append_path_with_name(&p,p.strip_prefix(root).unwrap()).map_err(|e|e.to_string())?;
+   baseline.insert(p.strip_prefix(root).unwrap().to_owned(),format!("{:x}",hash.finalize()));use std::io::Seek;file.rewind().map_err(|e|e.to_string())?;builder.append_file(p.strip_prefix(root).unwrap(),&mut file).map_err(|e|e.to_string())?;
   }
  }}builder.finish().map_err(|e|e.to_string())?;Ok(baseline)
 }
 fn unpack_outputs(root:&Path,path:&Path,baseline:&std::collections::HashMap<PathBuf,String>)->Result<(),String>{
+ let _root_lease=super::windows::hold_directory(root,root)?;
  let mut archive=tar::Archive::new(std::fs::File::open(path).map_err(|e|e.to_string())?);let mut total=0u64;
  for entry in archive.entries().map_err(|e|e.to_string())?{let mut entry=entry.map_err(|e|e.to_string())?;let raw=entry.path().map_err(|e|e.to_string())?.into_owned();let relative=raw.components().filter(|part|!matches!(part,std::path::Component::CurDir)).collect::<PathBuf>();let text=relative.to_string_lossy();let target=super::resolve(root,&text,true)?;
   let kind=entry.header().entry_type();if !kind.is_file()&&!kind.is_dir(){return Err("Linux输出含链接或设备文件，已拒绝同步到电脑".into());}
   total+=entry.size();if total>1024*1024*1024{return Err("Linux输出超过1GB，请分批导出".into());}
-  if kind.is_dir(){std::fs::create_dir_all(&target).map_err(|e|e.to_string())?;continue;}
+  if kind.is_dir(){if target!=root&&!target.exists(){let _lease=super::windows::hold_directory(root,target.parent().ok_or("目录无效")?)?;std::fs::create_dir(&target).map_err(|e|e.to_string())?;}continue;}
   let parent=target.parent().ok_or("文件路径无效")?;std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;let _lease=super::windows::hold_directory(root,parent)?;
   if target.exists(){use std::io::Read;let mut file=super::windows::read_file(&target)?;let mut hash=sha2::Sha256::new();use sha2::Digest;let mut bytes=[0u8;65536];loop{let n=file.read(&mut bytes).map_err(|e|e.to_string())?;if n==0{break;}hash.update(&bytes[..n]);}let current=format!("{:x}",hash.finalize());if baseline.get(&relative).is_none_or(|old|*old!=current){return Err(format!("本机文件 {} 在命令执行期间已变化，原文件保留，Linux产出仍在工作区环境中",text));}}
-  let temp=target.with_extension("linux-output.tmp");entry.unpack(&temp).map_err(|e|e.to_string())?;std::fs::rename(&temp,&target).map_err(|e|e.to_string())?;
+  let temp=parent.join(format!(".linux-output-{}",uuid::Uuid::new_v4().simple()));let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temp).map_err(|e|e.to_string())?;
+  if let Err(error)=std::io::copy(&mut entry,&mut file){drop(file);let _=std::fs::remove_file(&temp);return Err(error.to_string());}file.sync_all().map_err(|e|e.to_string())?;drop(file);std::fs::rename(&temp,&target).map_err(|e|e.to_string())?;
  }Ok(())
 }
 pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:bool,timeout:u64)->Result<Value,String>{
