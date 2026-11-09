@@ -5,11 +5,11 @@ on:
       build_run:
         description: 'Successful Windows and Android build run ID'
         required: true
-        default: '42575883229'
+        default: '42603270185'
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261109-workspace-save'
+        default: 'build-20261109-linux-workspace'
       title:
         description: 'Release title'
         required: true
@@ -43,7 +43,7 @@ jobs:
           test "$(jq -r .conclusion <<< "$run")" = success
           source_sha=$(jq -r .head_sha <<< "$run")
           git merge-base --is-ancestor "$source_sha" HEAD
-          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri index.html package.json package-lock.json vite.config.mjs scripts ':(exclude)scripts/verify-*'
+          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri runtime/manifest.json runtime/android/WorkspaceBridge.kt index.html package.json package-lock.json vite.config.mjs scripts ':(exclude)scripts/verify-*'
           printf '%s\n' "BUILD_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo 'Release already exists; choose a new tag instead of replacing published files.' >&2
@@ -81,15 +81,16 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：修复工作区保存拖住配置页的问题，增加保存转圈和等待说明。
+          ShellPilot：内置按需安装的 Alpine Linux 工作区，统一 Windows 和安卓文件协作。
 
-          - 工作区权限准备在后台线程处理，保存时配置、机器和聊天接口保持响应。
-          - 上级目录仅设置当前目录自身的通行权限，不再让权限工具遍历用户目录；保留无关文件权限与 AppContainer 隔离。
-          - 同一个已启用目录重复保存不重新准备权限；权限辅助进程超时会结束并在页面显示原因，保存不会一直等下去。
-          - 保存按钮显示「保存中…」，旁边转圈提示「正在保存中，权限设置可能耗时较长，请稍候」；成功或失败均恢复按钮，不弹窗。
-          - 配置请求有等待上限，失败可在页面重新加载。连接中断后的保存串行完成，不自动重复提交用户操作。
+          - 工作台新增「📁 工作区」大页面，顶部统一安装、卸载、启动停止、运行状态和随软件启动设置；文件列表和手动终端在同一页面，不新增小标签或左侧服务器入口。
+          - Windows 使用软件管理的 QEMU，安卓使用独立签名运行组件及 PRoot，两端使用 Alpine 3.24.4，无需 WSL 或手机 Root。
+          - 只有点击安装时下载环境，固定版本与 SHA256 校验，支持暂停续传和备用入口。Windows首次约125MB，安卓arm64运行组件约4.2MB；普通更新不重复下载同一环境。
+          - 默认按需启动，可手动启停和选择随软件启动；终端支持交互与尺寸变化，停止前保存文件和环境磁盘。卸载保留工作文件。
+          - AI 知道安装、启用和联网状态，能说明直接服务器文件管理上传与工作区处理后上传两种方式；内置 AI 支持授权服务器流式上传下载及上传校验。
+          - 保留原工作区、数据目录、记忆、任务队列和固定安卓签名；配置保存继续显示转圈与等待说明，二进制文件不会被当作文本误保存。
 
-          [本次验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42576484653)覆盖实际 Windows 用户目录工作区、保存中读取配置、邻近文件权限保持、辅助进程超时，以及文件协作、外部文件隔离与聊天回归。
+          [完整运行环境验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42597735254)覆盖实际 Windows QEMU 启动、文件同步、真实终端、重启和卸载保留，以及安卓模拟器和主应用 JNI/Binder 上传下载。[首次下载安装验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42603262341)检查实际下载、校验、系统安装URI和缓存复用。[应用回归](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42603276178)全部通过，包含后台、AI/MCP、两端工作区页面、旧终端与数据保留。
 
           原数据目录保留，Android 沿用固定 ShellPilot 签名。工作区用于 Windows，Android 保留现有功能。外部 MCP 的权限与授权机器范围不变；工作区使用方法见 [说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。
 
