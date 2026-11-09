@@ -30,7 +30,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  let proxy=if network{Some(super::linux_proxy::start().await?)}else{None};
  let diagnostics=std::fs::File::create(internal.join("linux-runtime.log")).map_err(|e|e.to_string())?;
  let mut command=tokio::process::Command::new(qemu.join("qemu-system-x86_64.exe"));
- command.args(["-machine","q35","-accel","tcg","-cpu","max","-m","384","-smp","2","-display","none","-monitor","none","-serial","file:linux-boot.log","-no-reboot","-L"]).arg(&qemu)
+ command.args(["-machine","q35","-accel","tcg,tb-size=64","-cpu","max","-m","384","-smp","2","-display","none","-monitor","none","-serial","file:linux-boot.log","-no-reboot","-L"]).arg(&qemu)
   .arg("-kernel").arg(guest.join("vmlinuz")).arg("-initrd").arg(guest.join("initramfs"))
   .arg("-append").arg(format!("console=ttyS0 modules=virtio_pci,virtio_blk,ext4 rootfstype=ext4 root=/dev/vda rw init=/sbin/shellpilot-init spkey={key_b64}"))
   .arg("-drive").arg("file=linux-disk.qcow2,format=qcow2,if=virtio")

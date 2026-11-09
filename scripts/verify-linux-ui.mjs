@@ -1,7 +1,7 @@
 import {chromium} from 'playwright';import assert from 'node:assert/strict';
 const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 try{for(const mobile of [false,true]){
- const page=await browser.newPage({viewport:{width:mobile?390:1200,height:850},userAgent:mobile?'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/141 Mobile':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141'});
+ const page=await browser.newPage({locale:'zh-CN',viewport:{width:mobile?390:1200,height:850},userAgent:mobile?'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/141 Mobile':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141'});
  let config={directory:mobile?'/workspace':'C:\\DemoWorkspace',enabled:true,network:false,autoStart:false,engine:'linux',supported:true};let runtime={phase:'installed',installed:true,available:true,running:false,total:10000000,received:10000000,version:'alpine-test'};const files=new Map([['demo.txt','initial']]);let installedCalls=0;
  page.on('dialog',()=>{throw Error('Unexpected dialog')});
  page.on('pageerror',error=>console.error('Workspace page error:',error.stack));
