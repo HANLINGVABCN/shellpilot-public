@@ -82,3 +82,19 @@ if (fs.existsSync(srcIconsDir) && fs.existsSync(dstResDir)) {
 }
 
 console.log('--- Android cleartext & icon configuration completed successfully ---');
+
+// A signature-protected companion owns the Linux files and PRoot process.
+const javaRoot=path.join(androidRoot,'app/src/main/java/app/shellpilot/client');
+fs.mkdirSync(javaRoot,{recursive:true});
+fs.copyFileSync('runtime/android/WorkspaceBridge.kt',path.join(javaRoot,'WorkspaceBridge.kt'));
+const mainFile=path.join(javaRoot,'MainActivity.kt');
+if(fs.existsSync(mainFile)){
+ let source=fs.readFileSync(mainFile,'utf8');
+ if(!source.includes('fun workspaceRuntime'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  fun workspaceRuntime(request: String): String = WorkspaceBridge.request(this, request)\n');
+ fs.writeFileSync(mainFile,source);
+}
+let appManifest=fs.readFileSync(manifestXml,'utf8');
+if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="app.shellpilot.workspace.ACCESS"/><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><queries><package android:name="app.shellpilot.workspace"/></queries>\n<application`);
+if(!appManifest.includes('workspace-files'))appManifest=appManifest.replace('</application>',`<provider android:name="androidx.core.content.FileProvider" android:authorities="app.shellpilot.client.workspace-files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/workspace_files"/></provider></application>`);
+fs.writeFileSync(manifestXml,appManifest);
+fs.writeFileSync(path.join(resXmlDir,'workspace_files.xml'),'<paths xmlns:android="http://schemas.android.com/apk/res/android"><files-path name="linux-installer" path="linux-runtime/"/></paths>');

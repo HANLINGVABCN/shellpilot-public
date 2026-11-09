@@ -43,7 +43,7 @@ public final class RuntimeService extends Service {
    else{try(InputStream in=new FileInputStream(file);OutputStream out=new FileOutputStream(fd.getFileDescriptor())){copy(in,out,1024L*1024*1024);}}
    return new JSONObject().put("ok",true);
   }
-  if(op.equals("terminal-open")){prepare();if(terminal!=null&&terminal.isAlive())throw new IOException("终端已打开");terminalOutput.reset();terminal=launch("exec /bin/sh -i",true);readAsync(terminal.getInputStream(),terminalOutput,256*1024);readAsync(terminal.getErrorStream(),terminalOutput,256*1024);return new JSONObject().put("opened",true);}
+  if(op.equals("terminal-open")){prepare();if(terminal!=null&&terminal.isAlive())throw new IOException("终端已打开");terminalOutput.reset();terminal=launch("exec /bin/sh -i",body.optBoolean("network",false));readAsync(terminal.getInputStream(),terminalOutput,256*1024);readAsync(terminal.getErrorStream(),terminalOutput,256*1024);return new JSONObject().put("opened",true);}
   if(op.equals("terminal-input")){if(terminal==null)throw new IOException("终端未打开");terminal.getOutputStream().write(body.getString("data").getBytes(StandardCharsets.UTF_8));terminal.getOutputStream().flush();return new JSONObject().put("ok",true);}
   if(op.equals("terminal-output")){synchronized(terminalOutput){String text=terminalOutput.toString("UTF-8");terminalOutput.reset();return new JSONObject().put("output",text).put("closed",terminal==null||!terminal.isAlive());}}
   if(op.equals("terminal-close")){if(terminal!=null){terminate(terminal);terminal=null;}return new JSONObject().put("closed",true);}

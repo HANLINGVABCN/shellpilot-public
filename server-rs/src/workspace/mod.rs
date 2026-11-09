@@ -4,6 +4,7 @@ pub mod linux_runtime;
 pub mod linux_vm;
 pub mod android;
 pub mod linux_proxy;
+pub mod transfer;
 use std::{path::{Path,PathBuf},sync::Arc};
 use serde::{Serialize,Deserialize};
 use serde_json::{Value,json};
@@ -173,7 +174,9 @@ pub fn schemas()->Vec<Value>{
  schema("workspace_write","创建或更新工作区文件；修改已有文件请传读取时的expectedHash",json!({"path":path,"content":{"type":"string"},"expectedHash":{"type":"string"}}),vec!["path","content"]),
  schema("workspace_mkdir","在工作区创建目录",json!({"path":path}),vec!["path"]),
  schema("workspace_delete","删除工作区文件或空目录",json!({"path":path}),vec!["path"]),
- schema("workspace_exec","在Windows AppContainer隔离工作区执行PowerShell。可以操作工作区，不具备外部用户文件权限。只在此目录完成任务。",json!({"command":{"type":"string"},"timeout":{"type":"integer"}}),vec!["command"])
+ schema("workspace_exec","在本机工作区执行命令。Linux环境使用/bin/sh，Windows本机环境使用PowerShell。只允许在工作区完成用户任务。",json!({"command":{"type":"string"},"timeout":{"type":"integer"}}),vec!["command"]),
+ schema("workspace_upload_to_server","将工作区文件流式上传到授权服务器的新文件路径；不覆盖已有文件。适合先处理用户文件再上传。",json!({"host":{"type":"string"},"path":path,"remotePath":{"type":"string"}}),vec!["host","path","remotePath"]),
+ schema("workspace_download_from_server","将授权服务器文件流式下载到工作区的新文件路径；不覆盖用户已有文件。",json!({"host":{"type":"string"},"path":path,"remotePath":{"type":"string"}}),vec!["host","path","remotePath"])
  ]
 }
 pub async fn files(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{result(call(&st,"workspace_list",&json!({"path":args.get("path").cloned().unwrap_or_default()})).await)}
@@ -183,6 +186,7 @@ pub async fn pick(State(st):State<Arc<crate::AppState>>)->Response{
  match picker{Some(picker)=>match blocking(move||picker()).await{Ok(path)=>Json(json!({"directory":path})).into_response(),Err(e)=>result(Err(e))},None=>result(Err("请输入本机目录完整路径".into()))}
 }
 pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{
+ #[cfg(target_os="android")]{if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}return android::download(&args).await;}
  let root=match st.workspace.root().await{Ok(root)=>root,Err(e)=>return result(Err(e))};
  let path=match resolve(&root,args.get("path").map(String::as_str).unwrap_or(""),false){Ok(path)=>path,Err(e)=>return result(Err(e))};
  let _lease=match windows::hold_directory(&root,path.parent().unwrap_or(&root)){Ok(lease)=>lease,Err(e)=>return result(Err(e))};
@@ -193,6 +197,7 @@ pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<st
  ([(axum::http::header::CONTENT_TYPE,"application/octet-stream".to_string()),(axum::http::header::CONTENT_DISPOSITION,format!("attachment; filename*=UTF-8''{}",percent_encoding::utf8_percent_encode(&name,percent_encoding::NON_ALPHANUMERIC)))],axum::body::Body::from_stream(stream)).into_response()
 }
 pub async fn upload(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>,mut multipart:axum::extract::Multipart)->Response{
+ #[cfg(target_os="android")]{if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}return result(android::upload(&args,&mut multipart).await);}
  result(async{
   use tokio::io::AsyncWriteExt;
   let _lock=st.workspace.mutation.lock().await;

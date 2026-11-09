@@ -4,7 +4,8 @@ arch=${1:-aarch64};abi=arm64-v8a;target=aarch64-linux-android
 if test "$arch" = x86_64; then abi=x86_64;target=x86_64-linux-android; fi
 mkdir -p "runtime-build/android-$arch";work=$(realpath "runtime-build/android-$arch");mkdir -p "$work"/src "$work"/jni/lib/"$abi" "$work"/assets "$work"/classes
 toolchain="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
-export CC="$toolchain/${target}26-clang" AR="$toolchain/llvm-ar" LD="$CC" STRIP="$toolchain/llvm-strip" OBJCOPY="$toolchain/llvm-objcopy" OBJDUMP="$toolchain/llvm-objdump"
+export CC="$toolchain/${target}26-clang" AR="$toolchain/llvm-ar" STRIP="$toolchain/llvm-strip" OBJCOPY="$toolchain/llvm-objcopy" OBJDUMP="$toolchain/llvm-objdump"
+export LD="$CC"
 curl -fL --retry 4 https://www.samba.org/ftp/talloc/talloc-2.5.0.tar.gz -o "$work/talloc.tar.gz"
 printf '912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007  %s/talloc.tar.gz\n' "$work" | sha256sum --check
 tar -xzf "$work/talloc.tar.gz" -C "$work/src"

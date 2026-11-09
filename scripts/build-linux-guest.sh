@@ -13,6 +13,8 @@ sudo mount -t proc proc "$root/proc"
 sudo mount -t sysfs sys "$root/sys"
 trap 'sudo umount "$root/dev" "$root/proc" "$root/sys" 2>/dev/null || true' EXIT
 sudo chroot "$root" /sbin/apk add --no-cache linux-virt openssh openrc ca-certificates
+kernel=$(basename "$(find "$root/lib/modules" -mindepth 1 -maxdepth 1 -type d | head -1)")
+sudo chroot "$root" /sbin/mkinitfs -f 'base scsi virtio ext4' "$kernel"
 sudo install -m 755 runtime/guest-init "$root/sbin/shellpilot-init"
 sudo mkdir -p "$root/workspace" "$root/root/.ssh"
 sudo chroot "$root" /usr/bin/ssh-keygen -A

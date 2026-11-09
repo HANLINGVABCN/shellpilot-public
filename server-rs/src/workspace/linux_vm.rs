@@ -85,7 +85,7 @@ fn pack(root:&Path,path:&Path)->Result<std::collections::HashMap<PathBuf,String>
 }
 fn unpack_outputs(root:&Path,path:&Path,baseline:&std::collections::HashMap<PathBuf,String>)->Result<(),String>{
  let mut archive=tar::Archive::new(std::fs::File::open(path).map_err(|e|e.to_string())?);let mut total=0u64;
- for entry in archive.entries().map_err(|e|e.to_string())?{let mut entry=entry.map_err(|e|e.to_string())?;let relative=entry.path().map_err(|e|e.to_string())?.to_owned();let text=relative.to_string_lossy();let target=super::resolve(root,&text,true)?;
+ for entry in archive.entries().map_err(|e|e.to_string())?{let mut entry=entry.map_err(|e|e.to_string())?;let raw=entry.path().map_err(|e|e.to_string())?.into_owned();let relative=raw.components().filter(|part|!matches!(part,std::path::Component::CurDir)).collect::<PathBuf>();let text=relative.to_string_lossy();let target=super::resolve(root,&text,true)?;
   let kind=entry.header().entry_type();if !kind.is_file()&&!kind.is_dir(){return Err("Linux输出含链接或设备文件，已拒绝同步到电脑".into());}
   total+=entry.size();if total>1024*1024*1024{return Err("Linux输出超过1GB，请分批导出".into());}
   if kind.is_dir(){std::fs::create_dir_all(&target).map_err(|e|e.to_string())?;continue;}
@@ -95,6 +95,7 @@ fn unpack_outputs(root:&Path,path:&Path,baseline:&std::collections::HashMap<Path
  }Ok(())
 }
 pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:bool,timeout:u64)->Result<Value,String>{
+ if st.workspace.linux.terminals.load(std::sync::atomic::Ordering::SeqCst)>0{return Err("工作区终端正在使用，请先关闭终端再让AI同步执行".into());}
  let mut vm=st.workspace.linux.vm.lock().await;
  if vm.as_ref().is_some_and(|v|v.root!=root||v.network!=network){if let Some(mut old)=vm.take(){old.stop().await;}}
  if vm.is_none(){*vm=Some(launch(root,network).await?);}
@@ -111,7 +112,7 @@ pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:boo
  if result.is_err(){if let Some(mut process)=vm.take(){process.stop().await;}return result;}
  successful(command(v,"tar -cf - -C /workspace .",None,Some(&output),120000).await?)?;
  let source=root.to_owned();tokio::task::spawn_blocking(move||unpack_outputs(&source,&output,&baseline)).await.map_err(|e|e.to_string())??;
- result
+ st.workspace.linux.touch();result
 }
 pub async fn start(st:&Arc<crate::AppState>)->Result<(),String>{
  let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("请先启用工作区".into());}if config.engine!="linux"{return Err("请选择内置Alpine Linux运行环境".into());}
@@ -121,6 +122,7 @@ pub async fn start(st:&Arc<crate::AppState>)->Result<(),String>{
  if vm.is_none(){*vm=Some(launch(&root,config.network).await?);}st.workspace.linux.touch();Ok(())
 }
 pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocket)->Result<(),String>{
+ #[cfg(target_os="android")]return super::android::terminal(st,socket).await;
  use futures_util::{StreamExt,SinkExt};
  start(&st).await?;
  let mut vm=st.workspace.linux.vm.lock().await;let v=vm.as_ref().ok_or("Linux运行环境尚未启动")?;

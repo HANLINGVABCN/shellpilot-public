@@ -67,6 +67,11 @@ impl ToolContext {
     pub async fn call(&self, name: &str, args: &Value) -> Result<Value, String> {
         if name.starts_with("workspace_"){
             if self.source!="ai"{return Err("工作区目前只供本机应用协作，未授权给外部MCP".into());}
+            if ["workspace_upload_to_server","workspace_download_from_server"].contains(&name){
+                let host=self.host(op::text_arg(args,"host")?).await?;
+                if name=="workspace_upload_to_server"{let command=format!("从本机工作区上传文件到 {}",op::text_arg(args,"remotePath")?);self.authorize(&host,&command,None).await?;}
+                return crate::workspace::transfer::transfer(&self.st,name,host["id"].as_str().unwrap_or(""),args).await;
+            }
             return crate::workspace::call(&self.st,name,args).await;
         }
         match name {
