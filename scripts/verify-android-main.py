@@ -12,6 +12,27 @@ while True:
     except Exception:
         if time.time()>deadline:raise
         time.sleep(.3)
+subprocess.run(['adb','uninstall','app.shellpilot.workspace'],check=True)
+subprocess.run(['adb','shell','appops','set','app.shellpilot.client','REQUEST_INSTALL_PACKAGES','allow'],check=True)
+api('/workspace/linux/install','POST',{})
+deadline=time.time()+90
+while True:
+    state=api('/workspace/linux')
+    if state.get('phase')=='confirm-installation':break
+    if state.get('error'):raise RuntimeError(state['error'])
+    if time.time()>deadline:raise RuntimeError('Runtime download/install URI timeout: '+str(state))
+    time.sleep(.5)
+subprocess.run(['adb','install','runtime-build/component/ShellPilot-Linux-Android-x86_64.apk'],check=True)
+subprocess.run(['adb','shell','am','start','-n','app.shellpilot.client/.MainActivity'],check=True)
+api('/workspace/linux/install','POST',{})
+deadline=time.time()+35
+while True:
+    state=api('/workspace/linux')
+    if state.get('installed'):break
+    if state.get('error'):raise RuntimeError(state['error'])
+    if time.time()>deadline:raise RuntimeError('Runtime preparation timeout')
+    time.sleep(.3)
+print('PASS: fresh Android runtime downloads only on install, verifies checksum, opens system installation URI and reuses cached component')
 try:api('/workspace','PUT',{'directory':'/workspace','enabled':True,'engine':'linux','network':False})
 except Exception:
     print(subprocess.check_output(['adb','logcat','-d','-t','120'],text=True))

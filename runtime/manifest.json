@@ -1,1 +1,45 @@
-{"version":"alpine-3.24.4-v1","packages":{}}
+{
+  "version": "alpine-3.24.4-v1",
+  "packages": {
+    "windows-qemu": {
+      "file": "ShellPilot-QEMU-Windows.tar.gz",
+      "bytes": 44765382,
+      "expandedBytes": 134336826,
+      "sha256": "2296c128d7f56ffe8983392c01a1fe7d1730e481720785a63a71498f825ad5af",
+      "urls": [
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-QEMU-Windows.tar.gz",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025013"
+      ]
+    },
+    "windows-guest": {
+      "file": "ShellPilot-Linux-Guest.tar.gz",
+      "bytes": 80615927,
+      "expandedBytes": 83252802,
+      "sha256": "de4b31afd388f90bcd63f31ca600b6690fc6ad9ec58052a29109a1413759e80b",
+      "urls": [
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Guest.tar.gz",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025003"
+      ]
+    },
+    "android-arm64": {
+      "file": "ShellPilot-Linux-Android-aarch64.apk",
+      "bytes": 4195102,
+      "expandedBytes": 5243678,
+      "sha256": "b1271cce4fbcc462b04d6987067d6db25c2db743ad81d94fac826965a539ebde",
+      "urls": [
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Android-aarch64.apk",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727024979"
+      ]
+    },
+    "android-x86_64": {
+      "file": "ShellPilot-Linux-Android-x86_64.apk",
+      "bytes": 3875605,
+      "expandedBytes": 4924181,
+      "sha256": "7d8590240b924984e75b62b2963e1e26325b33c459cf5d12fab0e149ea61c69f",
+      "urls": [
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Android-x86_64.apk",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025001"
+      ]
+    }
+  }
+}
