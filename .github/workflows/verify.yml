@@ -95,6 +95,7 @@ jobs:
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
           node scripts/verify-workspace-ui.mjs
+          node scripts/verify-linux-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

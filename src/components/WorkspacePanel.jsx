@@ -9,12 +9,12 @@ export function LinuxRuntimeSettings({onTerminal}){
  const load=()=>api('/workspace/linux','GET',undefined,{timeoutMs:10000}).then(setState).catch(e=>setError(e.message));
  useEffect(()=>{load();const off=ws.on('linux-install-state',()=>load());const timer=setInterval(load,2500);return()=>{off();clearInterval(timer);};},[]);
  const action=async path=>{setBusy(true);setError('');try{await api('/workspace/linux/'+path,'POST',{});await load();}catch(e){setError(e.message);}finally{setBusy(false);}};
- const installing=['downloading','verifying','extracting','confirm-installation'].includes(state.phase);
+ const installing=['downloading','verifying','extracting'].includes(state.phase);
  const received=Number(state.received)||0,total=Number(state.total)||0;
  return <div className="card linux-runtime"><div className="workspace-heading"><strong>Linux 环境</strong><span>{state.running?'运行中':phaseLabels[state.phase]||state.phase} {state.version||''}</span></div>
   <p className="memory-help">首次安装才下载 Alpine 和运行组件。普通更新继续使用已有环境，工作文件保持在工作区中。</p>
   {installing&&<div className="linux-progress" role="status"><span className="spinner-dot" aria-hidden="true"/>{phaseLabels[state.phase]} {received.toLocaleString('en-US')}/{total.toLocaleString('en-US')}B{total>0&&<progress value={received} max={total}/>}</div>}
-  <div className="memory-controls">{!state.installed&&<button className="btn primary" disabled={busy||installing||state.available===false} onClick={()=>action('install')}>{state.phase==='paused'||state.phase==='failed'?'继续安装':'安装 Linux 工作区'}</button>}
+  <div className="memory-controls">{!state.installed&&<button className="btn primary" disabled={busy||installing||state.available===false} onClick={()=>action('install')}>{state.phase==='confirm-installation'?'完成安装':state.phase==='paused'||state.phase==='failed'?'继续安装':'安装 Linux 工作区'}</button>}
    {installing&&<button className="btn" disabled={busy} onClick={()=>action('pause')}>暂停安装</button>}
    {state.installed&&<><button className="btn" disabled={busy} onClick={()=>action(state.running?'stop':'start')}>{state.running?'停止运行':'启动环境'}</button>{onTerminal&&<button className="btn" disabled={busy} onClick={onTerminal}>打开终端</button>}<button className="btn danger" disabled={busy} onClick={()=>setConfirmUninstall(true)}>卸载运行环境</button></>}
   </div>

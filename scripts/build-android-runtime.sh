@@ -46,7 +46,7 @@ for attempt in 1 2 3;do
 done
 test "$configured" = true
 make -j2
-find bin/default -name 'talloc*.o' -print0 | xargs -0 "$AR" rcs "$work/libtalloc.a"
+find bin/default \( -name 'talloc*.o' -o -name 'replace*.o' \) -print0 | xargs -0 "$AR" rcs "$work/libtalloc.a"
 cp talloc.h "$work/"
 popd
 curl -fL --retry 4 https://github.com/termux/proot/archive/v5.1.107.102.zip -o "$work/proot.zip"

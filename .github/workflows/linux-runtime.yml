@@ -97,3 +97,46 @@ jobs:
       - run: npm run build
       - run: cargo build --manifest-path server-rs/Cargo.toml
       - run: node scripts/verify-linux-windows.mjs
+  android-check:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-android-x86_64
+          path: runtime-build/component
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build signed fixture tests
+        env:
+          KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > /tmp/runtime-signing.p12
+          trap 'rm -f /tmp/runtime-signing.p12' EXIT
+          export SIGNING_KEY_PATH=/tmp/runtime-signing.p12
+          bash scripts/build-runtime-test.sh
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install runtime-build/component/ShellPilot-Linux-Android-x86_64.apk
+            adb install runtime-build/instrumentation/signed.apk
+            adb shell 'echo PRIVATE_CANARY > /data/local/tmp/shellpilot-private-canary; chmod 600 /data/local/tmp/shellpilot-private-canary'
+            adb shell am instrument -w app.shellpilot.workspace.test/.RuntimeTest | tee runtime-build/android-test.txt
+            grep -F 'PASS: Android PRoot' runtime-build/android-test.txt

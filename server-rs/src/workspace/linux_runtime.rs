@@ -58,7 +58,8 @@ async fn install(st:&Arc<crate::AppState>,m:Manifest,keys:Vec<&'static str>)->Re
  }
  #[cfg(target_os="android")]{
   update(st,"confirm-installation","android",0,0,None).await;
-  let path=base().join(platform()).join("runner.apk");super::android::request(json!({"op":"install","path":path})).await?;
+  let path=base().join(platform()).join("runner.apk");let result=super::android::request(json!({"op":"install","path":path})).await?;
+  if result["confirmationRequired"]!=true{update(st,"installed","",0,0,None).await;}
  }
  #[cfg(not(target_os="android"))]update(st,"installed","",0,0,None).await;
  Ok(())
