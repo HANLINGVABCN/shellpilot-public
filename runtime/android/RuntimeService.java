@@ -41,7 +41,7 @@ public final class RuntimeService extends Service {
   if(op.equals("import")||op.equals("export")){
    File file=resolve(body.getString("path"),op.equals("import"));
    if(fd==null)throw new IOException("Missing file descriptor");
-   if(op.equals("import")){if(file.exists())throw new IOException("文件已存在");File temp=new File(file.getParentFile(),".upload-"+UUID.randomUUID());try(InputStream in=new FileInputStream(fd.getFileDescriptor());OutputStream out=new FileOutputStream(temp)){copy(in,out,1024L*1024*1024);}try{android.system.Os.link(temp.getPath(),file.getPath());}finally{temp.delete();}}
+   if(op.equals("import")){if(file.exists())throw new IOException("文件已存在");try(InputStream in=new FileInputStream(fd.getFileDescriptor())){exclusiveCopy(in,file);}}
    else{try(InputStream in=new FileInputStream(file);OutputStream out=new FileOutputStream(fd.getFileDescriptor())){copy(in,out,1024L*1024*1024);}}
    return new JSONObject().put("ok",true);
   }
@@ -127,12 +127,18 @@ public final class RuntimeService extends Service {
  private Future<?> readAsync(InputStream input,ByteArrayOutputStream output,int limit){return workers.submit(()->{byte[] bytes=new byte[8192];try{int n;while((n=input.read(bytes))>=0){synchronized(output){int used=Math.min(n,limit-output.size());if(used>0)output.write(bytes,0,used);}}}catch(IOException ignored){}});}
  private void stopAll(){for(Process process:processes)terminate(process);processes.clear();for(TerminalSession session:terminals.values())session.size.delete();terminals.clear();active=false;}
  private void terminate(Process process){if(terminals.values().stream().anyMatch(session->session.process==process)){process.destroy();try{if(process.waitFor(3,TimeUnit.SECONDS))return;}catch(InterruptedException ignored){}}long pid=-1;try{java.lang.reflect.Field field=process.getClass().getDeclaredField("pid");field.setAccessible(true);pid=field.getLong(process);}catch(Exception ignored){}for(int attempt=0;attempt<8&&process.isAlive();attempt++){File[] proc=new File("/proc").listFiles();if(pid>0&&proc!=null)for(File entry:proc){try{String status=new String(readBytes(new File(entry,"status")),StandardCharsets.UTF_8);if(status.contains("TracerPid:\t"+pid+"\n"))android.system.Os.kill(Integer.parseInt(entry.getName()),9);}catch(Exception ignored){}}try{process.waitFor(100,TimeUnit.MILLISECONDS);}catch(InterruptedException ignored){}}process.destroyForcibly();}
+ private void exclusiveCopy(InputStream input,File target)throws Exception{
+  FileDescriptor descriptor=android.system.Os.open(target.getPath(),android.system.OsConstants.O_WRONLY|android.system.OsConstants.O_CREAT|android.system.OsConstants.O_EXCL|android.system.OsConstants.O_NOFOLLOW,0600);
+  android.system.StructStat owned=android.system.Os.fstat(descriptor);boolean complete=false;
+  try(OutputStream output=new FileOutputStream(descriptor)){copy(input,output,1024L*1024*1024);output.flush();android.system.Os.fsync(descriptor);complete=true;}
+  finally{if(!complete){try{android.system.StructStat current=android.system.Os.lstat(target.getPath());if(current.st_ino==owned.st_ino&&current.st_dev==owned.st_dev)target.delete();}catch(Exception ignored){}}}
+ }
  private static String quote(String text){return "'"+text.replace("'","'\\''")+"'";}
  private void removeWorkspace(File file)throws Exception{resolve(file.getPath().substring(files.getPath().length()+1),false);if(file.isDirectory()){File[] children=file.listFiles();if(children==null)throw new IOException("无法读取目录");for(File child:children)removeWorkspace(child);}if(!file.delete())throw new IOException("删除失败");}
  private void copyWorkspace(File source,File target)throws Exception{
   resolve(source.getPath().substring(files.getPath().length()+1),false);
   if(source.isDirectory()){if(!target.mkdir())throw new IOException("目录创建失败");File[] children=source.listFiles();if(children==null)throw new IOException("无法读取目录");for(File child:children)copyWorkspace(child,new File(target,child.getName()));}
-  else{File temp=File.createTempFile(".copy-",".tmp",target.getParentFile());try{try(InputStream in=new FileInputStream(source);OutputStream out=new FileOutputStream(temp)){copy(in,out,1024L*1024*1024);}android.system.Os.link(temp.getPath(),target.getPath());}finally{temp.delete();}}
+  else{try(InputStream in=new FileInputStream(source)){exclusiveCopy(in,target);}}
  }
  private File resolve(String path,boolean create)throws Exception{if(path.startsWith("/")||path.contains("\\")||path.contains(":"))throw new IOException("只能使用工作区相对路径");File target=new File(files,path).getCanonicalFile();String base=files.getCanonicalPath();if(!target.getPath().equals(base)&&!target.getPath().startsWith(base+"/"))throw new IOException("文件超出工作区");File cursor=files;for(String part:path.split("/")){if(part.equals("..")||part.equalsIgnoreCase(".shellpilot")||part.indexOf(0)>=0||part.contains("\n")||part.contains("\r"))throw new IOException("工作区路径无效");cursor=new File(cursor,part);try{android.system.StructStat stat=android.system.Os.lstat(cursor.getPath());if(android.system.OsConstants.S_ISLNK(stat.st_mode)||stat.st_nlink>1&&!cursor.isDirectory())throw new IOException("不允许链接文件");}catch(android.system.ErrnoException error){if(!create)throw error;}}return target;}
  private static byte[] readBytes(File file)throws IOException{try(InputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){copy(in,out,4L*1024*1024);return out.toByteArray();}}

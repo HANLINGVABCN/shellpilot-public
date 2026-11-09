@@ -38,7 +38,7 @@ pub fn action(root:&Path,name:&str,args:&Value)->Result<Value,String>{
     let source=super::resolve(root,source.as_str().ok_or("源路径无效")?,false)?;if source==root{return Err("不能复制工作区根目录".into());}
     let filename=source.file_name().ok_or("源文件名无效")?.to_string_lossy();let mut target=path.join(filename.as_ref());let mut index=2;
     if moving&&target==source{continue;}
-    if target.starts_with(&source){return Err("不能把文件夹放进自身目录".into());}
+    if target!=source&&target.starts_with(&source){return Err("不能把文件夹放进自身目录".into());}
     while target.exists(){target=path.join(format!("{filename} ({index})"));index+=1;}
     super::resolve(root,&relative(root,&target)?,true)?;
     if moving{let _from=super::windows::hold_directory(root,source.parent().ok_or("路径无效")?)?;let _to=super::windows::hold_directory(root,&path)?;std::fs::rename(&source,&target).map_err(|e|e.to_string())?;}else{copy(root,&source,&target)?;}

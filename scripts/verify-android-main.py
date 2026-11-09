@@ -53,3 +53,10 @@ request=urllib.request.Request(base+'/workspace/upload',data=data,headers={'Cont
 with urllib.request.urlopen(request,timeout=20) as response:assert response.status==200
 assert api('/workspace/action','POST',{'name':'workspace_read','arguments':{'path':'uploaded.txt'}})['content']=='streamed-upload'
 print('PASS: main Android app JNI/Binder connects to signed Linux component; files, commands, upload and download work end to end')
+manifest=json.dumps({'files':['folder/docs/readme.txt'],'directories':['folder/empty']})
+data=(f'--{boundary}\r\nContent-Disposition: form-data; name="manifest"\r\n\r\n{manifest}\r\n--{boundary}\r\nContent-Disposition: form-data; name="files"; filename="readme.txt"\r\nContent-Type: application/octet-stream\r\n\r\nnested-folder-upload\r\n--{boundary}--\r\n').encode()
+request=urllib.request.Request(base+'/workspace/upload',data=data,headers={'Content-Type':'multipart/form-data; boundary='+boundary},method='POST')
+with urllib.request.urlopen(request,timeout=30) as response:assert response.status==200
+assert api('/workspace/action','POST',{'name':'workspace_read','arguments':{'path':'folder/docs/readme.txt'}})['content']=='nested-folder-upload'
+assert any(entry['name']=='empty' and entry['directory'] for entry in api('/workspace/files?path=folder')['entries'])
+print('PASS: main Android folder upload preserves nested files and empty directories through JNI and file descriptors')

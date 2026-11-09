@@ -1269,6 +1269,8 @@ pub fn router(st: App) -> Router {
         .route("/api/workspace/files",get(crate::workspace::files))
         .route("/api/workspace/action",post(crate::workspace::action))
         .route("/api/workspace/upload",post(crate::workspace::upload))
+        .route("/api/workspace/user-upload-folder",post(crate::workspace::user_upload_folder))
+        .route("/api/workspace/user-upload-status",get(crate::workspace::user_upload_status))
         .route("/api/workspace/download",get(crate::workspace::download))
         .route("/api/workspace/user-download",post(crate::workspace::user_download))
         .route("/api/workspace/linux",get(crate::workspace::linux_runtime::status))

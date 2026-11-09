@@ -190,6 +190,12 @@ pub async fn user_download(State(st):State<Arc<crate::AppState>>,Json(body):Json
  if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}
  result(android::request(json!({"op":"user-export","path":body["path"]})).await)
 }
+pub async fn user_upload_folder(State(st):State<Arc<crate::AppState>>,Json(body):Json<Value>)->Response{
+ if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}
+ let path=body["path"].as_str().unwrap_or("");if !path.is_empty(){if let Err(error)=upload::valid_path(path){return result(Err(error));}}
+ result(android::request(json!({"op":"user-import-directory","path":path})).await)
+}
+pub async fn user_upload_status()->Response{result(android::request(json!({"op":"user-import-status"})).await)}
 pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{
  #[cfg(target_os="android")]{if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}return android::download(&args).await;}
  let root=match st.workspace.root().await{Ok(root)=>root,Err(e)=>return result(Err(e))};

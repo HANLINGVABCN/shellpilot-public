@@ -5,7 +5,7 @@ assert(process.env.GITHUB_ACTIONS==='true'&&process.platform==='win32','Use isol
 const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-linux-')),data=path.join(dir,'data'),root=path.join(dir,'工作 文件');fs.mkdirSync(root);fs.mkdirSync(data);
 const version=JSON.parse(fs.readFileSync('runtime/manifest.json','utf8')).version;
 for(const [name,source] of [['windows-qemu','runtime-build/qemu-runtime'],['windows-guest','runtime-build/guest-runtime']]){
- const dest=path.join(data,'linux-runtime',name);fs.cpSync(source,dest,{recursive:true});fs.writeFileSync(path.join(dest,'installed.json'),JSON.stringify({version}));
+ const dest=path.join(data,'linux-runtime',name);fs.cpSync(source,dest,{recursive:true});fs.writeFileSync(path.join(dest,'installed.json'),JSON.stringify({version:JSON.parse(fs.readFileSync('runtime/manifest.json','utf8')).packages[name]?.version||version}));
 }
 const backend=spawn(path.resolve('server-rs/target/debug/shellpilot-server.exe'),[],{env:{...process.env,SHELLPILOT_DATA:data,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
 let base;
@@ -24,6 +24,7 @@ try{
  const socket=new WebSocket(base.replace('http:','ws:')+'/api/workspace/terminal/ws');
  let terminalText='';const terminalReady=new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('Terminal timeout')),100000);socket.addEventListener('message',async event=>{terminalText+=typeof event.data==='string'?event.data:await event.data.text();if(terminalText.includes('manual-terminal-ok')){clearTimeout(t);resolve();}});socket.addEventListener('open',()=>socket.send(JSON.stringify({type:'input',data:"printf 'manual-terminal-ok\\n'\r"})));});
  await terminalReady;socket.close();await new Promise(resolve=>setTimeout(resolve,1200));
+ process.env.WORKSPACE_TEST_URL=base;await import('./verify-workspace-terminals.mjs');
  await api('/workspace/linux/uninstall','POST',{});assert.equal(fs.readFileSync(path.join(root,'answer.txt'),'utf8'),'generated');assert(fs.existsSync(disk));assert.equal((await api('/workspace/linux')).installed,false);
  console.log('PASS: real Windows packaged QEMU boots on demand, pins identity, syncs files, streams terminal, stops/restarts and uninstalls while preserving files and disk');
 }catch(error){for(const name of ['linux-boot.log','linux-runtime.log']){const file=path.join(root,'.shellpilot',name);if(fs.existsSync(file))console.error(fs.readFileSync(file,'utf8').slice(-12000));}throw error;}finally{backend.kill();}

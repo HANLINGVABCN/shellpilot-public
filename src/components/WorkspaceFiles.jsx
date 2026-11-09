@@ -67,6 +67,17 @@ export default function WorkspaceFiles({config,active,session,onPath,onConfigure
     event.preventDefault();event.stopPropagation();setDrag(false);
     const selection=collectWorkspaceDrop(event.dataTransfer);upload(selection,target);
   };
+  const uploadFolder = () => {
+    if(!/Android/i.test(navigator.userAgent)){folderInput.current.click();return;}
+    act(async()=>{
+      await api('/workspace/user-upload-folder','POST',{path});
+      try{for(;;){await new Promise(resolve=>setTimeout(resolve,700));const state=await api('/workspace/user-upload-status');
+        if(state.phase==='failed')throw Error(state.error||'文件夹上传失败');
+        if(['done','cancelled'].includes(state.phase))break;
+        if(state.phase==='copying')setProgress({native:true,count:state.files||0});
+      }}finally{setProgress(null);}
+    });
+  };
   const copy = move => {clipboard={directory:config.directory,paths:chosen.map(entry=>full(path,entry.name)),move};window.dispatchEvent(new Event('shellpilot-workspace-clipboard'));};
   const paste = () => act(async () => {if(!clipboard||clipboard.directory!==config.directory) return;await action('workspace_copy',{paths:clipboard.paths,path,move:clipboard.move});if(clipboard.move) clipboard=null;window.dispatchEvent(new Event('shellpilot-workspace-clipboard'));});
   const newItem = directory => setPrompt({kind:directory?'directory':'file',name:directory?'新文件夹':'new.txt'});
@@ -94,7 +105,7 @@ export default function WorkspaceFiles({config,active,session,onPath,onConfigure
         <button className="btn btn-sm" disabled={busy} onClick={()=>newItem(true)}>＋ 文件夹</button>
         <button className="btn btn-sm" disabled={busy} onClick={()=>newItem(false)}>新建文本</button>
         <button className="btn btn-sm" disabled={busy} onClick={()=>uploadInput.current.click()}>上传文件</button>
-        <button className="btn btn-sm" disabled={busy} onClick={()=>folderInput.current.click()}>上传文件夹</button>
+        <button className="btn btn-sm" disabled={busy} onClick={uploadFolder}>上传文件夹</button>
         <input ref={uploadInput} type="file" multiple hidden aria-label="上传工作区文件" onChange={event=>{const selection=workspaceSelection(event.target.files);event.target.value='';upload(selection);}}/>
         <input ref={folderInput} type="file" multiple webkitdirectory="" directory="" hidden aria-label="上传工作区文件夹" onChange={event=>{const selection=workspaceSelection(event.target.files);event.target.value='';upload(selection);}}/>
         <button className="btn btn-sm" disabled={busy||!chosen.length} onClick={()=>copy(false)}>复制</button>
@@ -104,7 +115,7 @@ export default function WorkspaceFiles({config,active,session,onPath,onConfigure
         <button className="btn btn-sm" disabled={busy||chosen.length!==1||chosen[0]?.directory} onClick={()=>download(chosen[0])}>下载</button>
         <button className="btn btn-sm danger" disabled={busy||!chosen.length} onClick={()=>setPrompt({kind:'delete'})}>删除</button>
       </div>
-      {progress && <div className="fm-transfer-bar" role="status"><div className="fm-transfer-info"><span>上传 {progress.count} 个文件</span><span className="fm-transfer-speed">{progress.percent}%</span><button className="btn btn-sm" onClick={()=>request.current?.abort()}>取消</button></div><div className="fm-transfer-track"><div className="fm-transfer-fill" style={{width:progress.percent+'%'}}/></div></div>}
+      {progress && <div className="fm-transfer-bar" role="status"><div className="fm-transfer-info"><span>{progress.native?'已上传':'上传'} {progress.count} 个文件</span>{progress.native?<span className="spinner-dot"/>:<><span className="fm-transfer-speed">{progress.percent}%</span><button className="btn btn-sm" onClick={()=>request.current?.abort()}>取消</button></>}</div>{!progress.native&&<div className="fm-transfer-track"><div className="fm-transfer-fill" style={{width:progress.percent+'%'}}/></div>}</div>}
       {prompt && <div className="workspace-file-prompt">{prompt.kind==='delete' ? <span>删除选中的 {chosen.length} 项及其中内容？</span> : <input aria-label="文件或文件夹名称" autoFocus value={prompt.name} onChange={event=>setPrompt({...prompt,name:event.target.value})} onKeyDown={event=>{if(event.key==='Enter') submit();if(event.key==='Escape') setPrompt(null);}}/>}<button className="btn btn-sm" disabled={busy} onClick={submit}>{prompt.kind==='delete'?'删除':'保存'}</button><button className="btn btn-sm" disabled={busy} onClick={()=>setPrompt(null)}>取消</button></div>}
       {editing && <div className="workspace-editor"><div className="fm-editor-hdr"><strong>{editing.path}</strong><button className="btn btn-sm" disabled={busy} onClick={()=>act(async()=>{await action('workspace_write',{path:editing.path,content:editing.content,expectedHash:editing.sha256});setEditing(null);})}>保存文件</button><button className="btn btn-sm" onClick={()=>setEditing(null)}>取消</button></div><textarea aria-label="工作区文件内容" value={editing.content} onChange={event=>setEditing({...editing,content:event.target.value})}/></div>}
       <div className={'fm-list'+(drag?' drag':'')} onContextMenu={event=>context(event,null)} onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files')&&!busy){event.preventDefault();event.dataTransfer.dropEffect='copy';setDrag(true);}}} onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget)) setDrag(false);}} onDrop={drop}>
@@ -124,7 +135,7 @@ export default function WorkspaceFiles({config,active,session,onPath,onConfigure
     {menu && <div className="fm-menu" style={{left:menu.x,top:menu.y}} onMouseDown={event=>event.stopPropagation()}>
       <button className="fm-menu-item" onClick={()=>{const target=menu.entry?.directory?full(path,menu.entry.name):path;setMenu(null);onOpenTerminal(target);}}>在此处打开终端</button>
       {menu.entry && <button className="fm-menu-item" onClick={()=>{const entry=menu.entry;setMenu(null);entry.directory?navigate(full(path,entry.name)):read(entry);}}>打开</button>}
-      <button className="fm-menu-item" onClick={()=>{setMenu(null);folderInput.current.click();}}>上传文件夹</button>
+      <button className="fm-menu-item" onClick={()=>{setMenu(null);uploadFolder();}}>上传文件夹</button>
       <button className="fm-menu-item" onClick={()=>{setMenu(null);newItem(true);}}>新建文件夹</button>
       <button className="fm-menu-item" onClick={()=>{setMenu(null);onConfigure();}}>⚙ 配置</button>
     </div>}

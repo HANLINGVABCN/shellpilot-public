@@ -87,6 +87,8 @@ export default function App() {
     return L1S.some((t) => t.id === saved) ? saved : loadOrder('shellpilot-tab-order', L1S.map((t) => t.id))[0];
   });
   useEffect(() => { try { localStorage.setItem('shellpilot-l1', l1); } catch {} }, [l1]);
+  const [workspaceOpened,setWorkspaceOpened]=useState(l1==='workspace');
+  useEffect(()=>{if(l1==='workspace')setWorkspaceOpened(true);},[l1]);
   const [l1Order, setL1Order] = useState(() => loadOrder('shellpilot-tab-order', L1S.map((t) => t.id)));
   const l1OrderRef = useRef(l1Order);
   const l1TabsRef = useRef(null);
@@ -733,7 +735,7 @@ export default function App() {
                 )}
                 <HostIdentityPrompt hostId={activeWorkHost} hosts={hosts} />
                 <div className="stage-content">
-                <div className={'stage-pane'+(l1==='workspace'?' show':'')}><WorkspacePanel fullPage active={l1==='workspace'}/></div>
+                {(workspaceOpened||l1==='workspace')&&<div className={'stage-pane'+(l1==='workspace'?' show':'')}><WorkspacePanel fullPage active={l1==='workspace'}/></div>}
                 {l1 === 'terminal' && termSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeTerm === s.id ? ' show' : '')}>
                     <TerminalView
