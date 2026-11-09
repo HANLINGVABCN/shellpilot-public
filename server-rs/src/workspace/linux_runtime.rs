@@ -85,6 +85,7 @@ async fn download(st:&Arc<crate::AppState>,key:&str,package:&Package)->Result<Pa
    let request=if offset>0{client.get(url).header(reqwest::header::RANGE,format!("bytes={offset}-"))}else{client.get(url)};let request=request.header(reqwest::header::ACCEPT,"application/octet-stream");
    let response=match tokio::select!{result=request.send()=>result,_=paused.changed()=>return Err("安装已暂停，下次继续会复用已下载内容".into())}{Ok(r)=>r,Err(e)=>{last=format!("下载失败：{e}");continue;}};
    if !response.status().is_success(){last=format!("下载源返回HTTP {}",response.status());continue;}
+   if response.headers().get(reqwest::header::CONTENT_TYPE).and_then(|value|value.to_str().ok()).is_some_and(|value|value.starts_with("application/json")||value.starts_with("text/html")){last="下载源返回了说明页面，已保留原有下载进度".into();continue;}
    if response.status()==reqwest::StatusCode::PARTIAL_CONTENT{
     let expected=format!("bytes {offset}-");if !response.headers().get(reqwest::header::CONTENT_RANGE).and_then(|h|h.to_str().ok()).is_some_and(|h|h.starts_with(&expected)&&h.ends_with(&format!("/{}",package.bytes))){last="续传响应不匹配".into();continue;}
    }else{offset=0;}
