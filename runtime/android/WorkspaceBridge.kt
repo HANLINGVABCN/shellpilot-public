@@ -30,7 +30,9 @@ object WorkspaceBridge {
   if(!installed&&op=="status")return JSONObject().put("installed",false).toString()
   if(!installed&&op=="install"){
    val file=File(body.getString("path"))
-   val uri=FileProvider.getUriForFile(activity,"app.shellpilot.client.workspace-files",file)
+   val staged=File(activity.cacheDir,"linux-installer/runner.apk")
+   staged.parentFile?.mkdirs();file.copyTo(staged,overwrite=true)
+   val uri=FileProvider.getUriForFile(activity,"app.shellpilot.client.workspace-files",staged)
    activity.runOnUiThread{activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))}
    return JSONObject().put("confirmationRequired",true).toString()
   }

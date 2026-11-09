@@ -101,7 +101,7 @@ let appManifest=fs.readFileSync(manifestXml,'utf8');
 if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="app.shellpilot.workspace.ACCESS"/><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><queries><package android:name="app.shellpilot.workspace"/></queries>\n<application`);
 if(!appManifest.includes('workspace-files'))appManifest=appManifest.replace('</application>',`<provider android:name="androidx.core.content.FileProvider" android:authorities="app.shellpilot.client.workspace-files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/workspace_files"/></provider></application>`);
 fs.writeFileSync(manifestXml,appManifest);
-fs.writeFileSync(path.join(resXmlDir,'workspace_files.xml'),'<paths xmlns:android="http://schemas.android.com/apk/res/android"><files-path name="linux-installer" path="linux-runtime/"/></paths>');
+fs.writeFileSync(path.join(resXmlDir,'workspace_files.xml'),'<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="linux-installer" path="linux-installer/"/></paths>');
 const rules=path.join(androidRoot,'app/proguard-rules.pro');
 let keep=fs.existsSync(rules)?fs.readFileSync(rules,'utf8'):'';
 if(!keep.includes('workspaceRuntime'))keep+='\n-keepclassmembers class app.shellpilot.client.MainActivity { public java.lang.String workspaceRuntime(java.lang.String); private native void registerWorkspaceBridge(); }\n';
