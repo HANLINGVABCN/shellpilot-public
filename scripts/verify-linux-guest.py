@@ -7,7 +7,7 @@ with tempfile.TemporaryDirectory() as temp:
     public=key.with_suffix('.pub').read_text().strip();auth=base64.b64encode(public.encode()).decode()
     known=folder/'known';known.write_text(f'[127.0.0.1]:{port} '+(assets/'hostkey.pub').read_text())
     disk=folder/'disk.qcow2';shutil.copyfile(assets/'base.qcow2',disk)
-    qemu=['qemu-system-x86_64','-machine','q35','-accel','tcg','-m','384','-smp','2','-display','none','-monitor','none','-serial','file:'+str(folder/'boot.log'),'-kernel',str(assets/'vmlinuz'),'-initrd',str(assets/'initramfs'),'-append',f'console=ttyS0 root=/dev/vda rw init=/sbin/shellpilot-init spkey={auth}','-drive',f'file={disk},if=virtio,format=qcow2','-device','virtio-net-pci,romfile=,netdev=n','-netdev',f'user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22']
+    qemu=['qemu-system-x86_64','-machine','q35','-accel','tcg','-m','384','-smp','2','-display','none','-monitor','none','-serial','file:'+str(folder/'boot.log'),'-kernel',str(assets/'vmlinuz'),'-initrd',str(assets/'initramfs'),'-append',f'console=ttyS0 modules=virtio_pci,virtio_blk,ext4 rootfstype=ext4 root=/dev/vda rw init=/sbin/shellpilot-init spkey={auth}','-drive',f'file={disk},if=virtio,format=qcow2','-device','virtio-net-pci,romfile=,netdev=n','-netdev',f'user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22']
     process=subprocess.Popen(qemu,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE)
     ssh=['ssh','-p',str(port),'-i',str(key),'-o','BatchMode=yes','-o','ConnectTimeout=2','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+str(known),'root@127.0.0.1']
     try:

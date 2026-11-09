@@ -50,3 +50,5 @@ for name in ['sendmsg','sendmmsg','socketcall','io_uring_setup']:
         policy+='\nif(syscall_number==PR_'+name+'){status=-EACCES;goto end;}\n'
 if text.count(needle)!=1:raise SystemExit('PRoot syscall hook changed')
 source.write_text(text.replace(needle,needle+policy))
+compat=pathlib.Path(sys.argv[1])/'src/extension/ashmem_memfd/ashmem_memfd.c'
+compat.write_text('#include <string.h>\n'+compat.read_text())

@@ -67,3 +67,33 @@ jobs:
           path: |
             runtime-build/ShellPilot-Linux-Android-${{ matrix.arch }}.apk
             runtime-build/ShellPilot-Linux-Android-${{ matrix.arch }}-sources.tar.gz
+  windows-check:
+    needs: [guest, qemu]
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs -> target
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-guest
+          path: runtime-build/downloads
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-qemu
+          path: runtime-build/downloads
+      - shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force runtime-build/guest-runtime,runtime-build/qemu-runtime | Out-Null
+          tar -xzf runtime-build/downloads/ShellPilot-Linux-Guest.tar.gz -C runtime-build/guest-runtime
+          tar -xzf runtime-build/downloads/ShellPilot-QEMU-Windows.tar.gz -C runtime-build/qemu-runtime
+      - run: npm ci
+      - run: npm run build
+      - run: cargo build --manifest-path server-rs/Cargo.toml
+      - run: node scripts/verify-linux-windows.mjs

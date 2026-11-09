@@ -31,7 +31,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  let mut command=tokio::process::Command::new(qemu.join("qemu-system-x86_64.exe"));
  command.args(["-machine","q35","-accel","tcg","-cpu","max","-m","384","-smp","2","-display","none","-monitor","none","-serial","file:linux-boot.log","-no-reboot","-L"]).arg(&qemu)
   .arg("-kernel").arg(guest.join("vmlinuz")).arg("-initrd").arg(guest.join("initramfs"))
-  .arg("-append").arg(format!("console=ttyS0 root=/dev/vda rw init=/sbin/shellpilot-init spkey={key_b64}"))
+  .arg("-append").arg(format!("console=ttyS0 modules=virtio_pci,virtio_blk,ext4 rootfstype=ext4 root=/dev/vda rw init=/sbin/shellpilot-init spkey={key_b64}"))
   .arg("-drive").arg(format!("file={},format=qcow2,if=virtio",disk.to_string_lossy().replace(',',",,")))
   .args(["-device","virtio-net-pci,romfile=,netdev=n","-netdev"]).arg(format!("user,id=n,restrict=on,hostfwd=tcp:127.0.0.1:{port}-:22{}",if proxy.is_some(){",guestfwd=tcp:10.0.2.100:3128-chardev:internet"}else{""}))
   .current_dir(&internal).env_clear().stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).kill_on_drop(true);

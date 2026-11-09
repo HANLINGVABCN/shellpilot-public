@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 object WorkspaceBridge {
  private const val runtimePackage="app.shellpilot.workspace"
- fun request(activity:Activity,text:String):String=try{
+ fun request(activity:Activity,text:String):String { return try{
   val body=JSONObject(text)
   val op=body.optString("op")
   val installed=try{activity.packageManager.getPackageInfo(runtimePackage,0);true}catch(_:Exception){false}
@@ -41,5 +41,5 @@ object WorkspaceBridge {
     output.readException();output.readString()?:"{}"
    }finally{descriptor?.close();input.recycle();output.recycle()}
   }finally{activity.unbindService(connection)}
- }catch(error:Exception){JSONObject().put("error",error.message?:"安卓工作区操作失败").toString()}
+ }catch(error:Exception){JSONObject().put("error",error.message?:"安卓工作区操作失败").toString()} }
 }
