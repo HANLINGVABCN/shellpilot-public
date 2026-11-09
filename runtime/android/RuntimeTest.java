@@ -22,6 +22,21 @@ public final class RuntimeTest extends Instrumentation {
    if(outside.getInt("exitCode")==0||outside.getString("stdout").contains("PRIVATE_CANARY"))throw new Exception("Outside file read was not denied");
    call(service[0],new JSONObject().put("op","terminal-open").put("network",false));call(service[0],new JSONObject().put("op","terminal-input").put("data","echo MANUAL_TERMINAL_OK\n"));Thread.sleep(600);
    JSONObject terminal=call(service[0],new JSONObject().put("op","terminal-output"));if(!terminal.getString("output").contains("MANUAL_TERMINAL_OK"))throw new Exception(terminal.toString());call(service[0],new JSONObject().put("op","terminal-close"));
+   call(service[0],new JSONObject().put("op","action").put("name","workspace_mkdir").put("arguments",new JSONObject().put("path","multi")));
+   call(service[0],new JSONObject().put("op","terminal-open").put("session","a").put("path","multi"));
+   call(service[0],new JSONObject().put("op","terminal-open").put("session","b"));
+   call(service[0],new JSONObject().put("op","terminal-input").put("session","a").put("data","pwd; echo SESSION_A; echo saved > created.txt\n"));
+   call(service[0],new JSONObject().put("op","terminal-input").put("session","b").put("data","pwd; echo SESSION_B\n"));Thread.sleep(1000);
+   String a=call(service[0],new JSONObject().put("op","terminal-output").put("session","a")).getString("output");
+   String b=call(service[0],new JSONObject().put("op","terminal-output").put("session","b")).getString("output");
+   if(!a.contains("/workspace/multi")||!a.contains("SESSION_A")||a.contains("SESSION_B")||!b.contains("SESSION_B")||b.contains("SESSION_A"))throw new Exception("Terminal sessions mixed: "+a+" / "+b);
+   call(service[0],new JSONObject().put("op","terminal-close").put("session","a"));
+   call(service[0],new JSONObject().put("op","terminal-input").put("session","b").put("data","echo STILL_ALIVE\n"));Thread.sleep(500);
+   if(!call(service[0],new JSONObject().put("op","terminal-output").put("session","b")).getString("output").contains("STILL_ALIVE"))throw new Exception("Closing another terminal killed this session");
+   call(service[0],new JSONObject().put("op","terminal-close").put("session","b"));
+   call(service[0],new JSONObject().put("op","action").put("name","workspace_copy").put("arguments",new JSONObject().put("path","").put("paths",new JSONArray().put("multi"))));
+   call(service[0],new JSONObject().put("op","action").put("name","workspace_rename").put("arguments",new JSONObject().put("path","multi (2)").put("to","renamed")));
+   call(service[0],new JSONObject().put("op","action").put("name","workspace_delete").put("arguments",new JSONObject().put("path","renamed").put("recursive",true)));
    call(service[0],new JSONObject().put("op","uninstall"));
    // Removing the runtime must keep user outputs; preparing again is explicit.
    call(service[0],new JSONObject().put("op","prepare"));JSONObject file=call(service[0],new JSONObject().put("op","action").put("name","workspace_read").put("arguments",new JSONObject().put("path","answer.txt")));

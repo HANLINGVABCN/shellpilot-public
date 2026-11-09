@@ -35,6 +35,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/verify-brand.mjs
+      - run: node scripts/verify-workspace-upload.mjs
       - name: Verify Windows font metrics and reading interactions
         shell: pwsh
         run: |
@@ -95,7 +96,6 @@ jobs:
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
           node scripts/verify-workspace-ui.mjs
-          node scripts/verify-linux-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -132,17 +132,21 @@ pub async fn start(st:&Arc<crate::AppState>)->Result<(),String>{
  let root=st.workspace.root().await?;let mut vm=st.workspace.linux.vm.lock().await;
  if vm.is_none(){*vm=Some(launch(&root,config.network).await?);}st.workspace.linux.touch();Ok(())
 }
-pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocket)->Result<(),String>{
- #[cfg(target_os="android")]return super::android::terminal(st,socket).await;
+pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocket,path:String)->Result<(),String>{
+ #[cfg(target_os="android")]return super::android::terminal(st,socket,path).await;
  use futures_util::{StreamExt,SinkExt};
  start(&st).await?;
  let mut vm=st.workspace.linux.vm.lock().await;let v=vm.as_ref().ok_or("Linux运行环境尚未启动")?;
  let root=v.root.clone();let internal=root.join(".shellpilot");let input=internal.join("terminal-input.tar");let root_copy=root.clone();
- let baseline=tokio::task::spawn_blocking(move||pack(&root_copy,&input)).await.map_err(|e|e.to_string())??;
- successful(command(v,"mkdir -p /workspace; tar -xf - -C /workspace",Some(&internal.join("terminal-input.tar")),None,120000).await?)?;
+ if !super::resolve(&root,&path,false)?.is_dir(){return Err("终端路径必须是工作区文件夹".into());}
+ let first=st.workspace.linux.terminals.load(std::sync::atomic::Ordering::SeqCst)==0;
+ let baseline=if first{
+  let baseline=tokio::task::spawn_blocking(move||pack(&root_copy,&input)).await.map_err(|e|e.to_string())??;
+  successful(command(v,"mkdir -p /workspace; find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- '{}' +; tar -xf - -C /workspace",Some(&internal.join("terminal-input.tar")),None,120000).await?)?;baseline
+ }else{v.terminal_baseline.clone().ok_or("工作区同步状态尚未就绪")?};
  let mut handle=connect(v).await?;let mut channel=handle.channel_open_session().await.map_err(|e|e.to_string())?;
  channel.request_pty(true,"xterm-256color",100,28,0,0,&[]).await.map_err(|e|e.to_string())?;channel.request_shell(true).await.map_err(|e|e.to_string())?;
- channel.data(&b"cd /workspace\r"[..]).await.map_err(|e|e.to_string())?;
+ channel.data(format!("cd -- {}\r",crate::util::shq(&format!("/workspace{}",if path.is_empty(){String::new()}else{format!("/{path}")}))).as_bytes()).await.map_err(|e|e.to_string())?;
  if v.network{channel.data(&b"export http_proxy=http://10.0.2.100:3128 https_proxy=http://10.0.2.100:3128\r"[..]).await.map_err(|e|e.to_string())?;}
  vm.as_mut().unwrap().terminal_baseline=Some(baseline.clone());st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);drop(vm);
  let (mut output,mut input)=socket.split();let mut generation=st.workspace.generation.subscribe();
@@ -151,7 +155,9 @@ pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocke
   message=channel.wait()=>match message{Some(ChannelMsg::Data{data})|Some(ChannelMsg::ExtendedData{data,..})=>{if output.send(axum::extract::ws::Message::Binary(data.to_vec().into())).await.is_err(){break;}},Some(ChannelMsg::Close)|None=>break,_=>{}},
   _=generation.changed()=>break
  }}
- let _=channel.close().await;st.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);
- let mut vm=st.workspace.linux.vm.lock().await;if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),120000).await.is_ok(){match tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await{Ok(Ok(()))=>vm.as_mut().unwrap().terminal_baseline=None,Ok(Err(error))=>st.broadcast_all(&json!({"type":"workspace-error","error":error})),Err(error)=>st.broadcast_all(&json!({"type":"workspace-error","error":error.to_string()}))}}}
+ let _=channel.close().await;
+ let mut vm=st.workspace.linux.vm.lock().await;
+ let last=st.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst)==1;
+ if last{if let Some(v)=vm.as_ref(){let path=internal.join("terminal-output.tar");if command(v,"tar -cf - -C /workspace .; result=$?; sync; exit $result",None,Some(&path),120000).await.is_ok(){match tokio::task::spawn_blocking(move||unpack_outputs(&root,&path,&baseline)).await{Ok(Ok(()))=>{vm.as_mut().unwrap().terminal_baseline=None;st.broadcast_all(&json!({"type":"workspace-files-changed"}));},Ok(Err(error))=>st.broadcast_all(&json!({"type":"workspace-error","error":error})),Err(error)=>st.broadcast_all(&json!({"type":"workspace-error","error":error.to_string()}))}}}}
  st.workspace.linux.touch();Ok(())
 }

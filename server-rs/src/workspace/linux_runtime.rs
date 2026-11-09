@@ -6,7 +6,7 @@ use sha2::{Sha256,Digest};
 use futures_util::StreamExt;
 
 #[derive(Clone,Deserialize)]
-pub struct Package{pub file:String,pub bytes:u64,pub sha256:String,pub urls:Vec<String>,#[serde(rename="expandedBytes")]pub expanded_bytes:u64}
+pub struct Package{pub file:String,pub bytes:u64,pub sha256:String,pub urls:Vec<String>,#[serde(rename="expandedBytes")]pub expanded_bytes:u64,#[serde(default)]pub version:Option<String>}
 #[derive(Deserialize)]pub struct Manifest{pub version:String,pub packages:std::collections::HashMap<String,Package>}
 pub fn manifest()->Manifest{serde_json::from_str(include_str!("../../../runtime/manifest.json")).expect("bundled Linux manifest")}
 pub fn base()->PathBuf{crate::data_dir().join("linux-runtime")}
@@ -30,7 +30,7 @@ impl LinuxHub{
  pub async fn stop(&self){#[cfg(target_os="android")]{let _=super::android::request(json!({"op":"stop"})).await;}let mut vm=self.vm.lock().await;if let Some(mut process)=vm.take(){process.stop().await;}}
 }
 pub fn package_keys()->Vec<&'static str>{match platform(){"windows"=>vec!["windows-qemu","windows-guest"],"android-arm64"=>vec!["android-arm64"],"android-x86_64"=>vec!["android-x86_64"],_=>vec![]}}
-fn installed(key:&str,version:&str)->bool{let file=base().join(key).join("installed.json");std::fs::read(file).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).is_some_and(|v|v["version"]==version)}
+fn installed(key:&str,version:&str)->bool{let m=manifest();let version=m.packages.get(key).and_then(|package|package.version.as_deref()).unwrap_or(version);let file=base().join(key).join("installed.json");std::fs::read(file).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).is_some_and(|v|v["version"]==version)}
 async fn update(st:&Arc<crate::AppState>,phase:&str,package:&str,received:u64,total:u64,error:Option<String>){
  let status=InstallStatus{phase:phase.into(),package:package.into(),received,total,error,version:manifest().version};
  *st.workspace.linux.install.lock().await=status.clone();st.broadcast_all(&json!({"type":"linux-install-state","state":status}));
@@ -55,7 +55,7 @@ async fn install(st:&Arc<crate::AppState>,m:Manifest,keys:Vec<&'static str>)->Re
   cancel(st)?;if installed(key,&m.version){continue;}
   let package=&m.packages[key];let archive=download(st,key,package).await?;cancel(st)?;
   update(st,"extracting",key,package.bytes,package.bytes,None).await;
-  let target=base().join(key);let package=package.clone();let version=m.version.clone();
+  let target=base().join(key);let package=package.clone();let version=package.version.clone().unwrap_or_else(||m.version.clone());
   tokio::task::spawn_blocking(move||install_archive(&archive,&target,&package,&version)).await.map_err(|e|e.to_string())??;
  }
  #[cfg(target_os="android")]{
@@ -128,7 +128,12 @@ pub async fn install_route(axum::extract::State(st):axum::extract::State<Arc<cra
 pub async fn pause(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::Json<Value>{st.workspace.linux.cancel.send_replace(true);axum::Json(json!({"paused":true}))}
 pub async fn stop(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::Json<Value>{st.workspace.generation.send_modify(|n|*n+=1);st.workspace.linux.stop().await;axum::Json(json!({"stopped":true}))}
 pub async fn run(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{super::result(super::linux_vm::start(&st).await.map(|_|json!({"running":true})))}
-pub async fn terminal_route(ws:axum::extract::ws::WebSocketUpgrade,axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{ws.on_upgrade(move|mut socket|async move{if let Err(error)=super::linux_vm::start(&st).await{let _=socket.send(axum::extract::ws::Message::Text(format!("\r\n{error}\r\n").into())).await;return;}let _=super::linux_vm::terminal(st,socket).await;})}
+pub async fn terminal_route(ws:axum::extract::ws::WebSocketUpgrade,axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>,axum::extract::Query(args):axum::extract::Query<std::collections::HashMap<String,String>>)->axum::response::Response{
+ ws.on_upgrade(move|mut socket|async move{let path=args.get("path").cloned().unwrap_or_default();if !path.is_empty(){if let Err(error)=super::upload::valid_path(&path){let _=socket.send(axum::extract::ws::Message::Text(format!("\r\n{error}\r\n").into())).await;return;}}
+  if let Err(error)=super::linux_vm::start(&st).await{let _=socket.send(axum::extract::ws::Message::Text(format!("\r\n{error}\r\n").into())).await;return;}
+  let _=super::linux_vm::terminal(st,socket,path).await;
+ })
+}
 pub fn lifecycle(st:&Arc<crate::AppState>){let weak=Arc::downgrade(st);tokio::spawn(async move{
  if let Some(st)=weak.upgrade(){let config=st.workspace.config.lock().await.clone();if config.enabled&&config.engine=="linux"&&config.auto_start{let _=super::linux_vm::start(&st).await;}}
  loop{tokio::time::sleep(Duration::from_secs(30)).await;let Some(st)=weak.upgrade()else{break;};let config=st.workspace.config.lock().await.clone();

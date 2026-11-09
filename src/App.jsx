@@ -733,7 +733,7 @@ export default function App() {
                 )}
                 <HostIdentityPrompt hostId={activeWorkHost} hosts={hosts} />
                 <div className="stage-content">
-                {l1==='workspace'&&<div className="stage-pane show"><WorkspacePanel fullPage onSettings={()=>setView('settings')}/></div>}
+                <div className={'stage-pane'+(l1==='workspace'?' show':'')}><WorkspacePanel fullPage active={l1==='workspace'}/></div>
                 {l1 === 'terminal' && termSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeTerm === s.id ? ' show' : '')}>
                     <TerminalView

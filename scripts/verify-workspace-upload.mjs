@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {collectWorkspaceDrop,workspaceSelection,workspaceUploadBody} from '../src/workspace-upload.js';
+const file=(name,text=name)=>new File([text],name);
+const entry=name=>({name,isFile:true,file:resolve=>resolve(file(name))});
+let batches=0;
+const folder={name:'project',isDirectory:true,createReader:()=>({readEntries:resolve=>{batches++;resolve(batches===1?Array.from({length:100},(_,index)=>entry(index+'.txt')):batches===2?[entry('last.txt'),{name:'empty',isDirectory:true,createReader:()=>({readEntries:resolve=>resolve([])})}]:[]);}})};
+let valid=true;
+const transfer={items:[{kind:'file',webkitGetAsEntry:()=>{assert(valid);return folder;},getAsFile:()=>null}],files:[]};
+const pending=collectWorkspaceDrop(transfer);valid=false;
+const selected=await pending;
+assert.equal(selected.files.length,101);assert(selected.files.some(item=>item.path==='project/last.txt'));assert(selected.directories.includes('project/empty'));
+const body=workspaceUploadBody(selected),manifest=JSON.parse(body.get('manifest'));
+assert.equal(manifest.files.length,101);assert.equal(body.getAll('files').length,101);assert(manifest.directories.includes('project/empty'));
+const nested=file('readme.txt');Object.defineProperty(nested,'webkitRelativePath',{value:'project/docs/readme.txt'});
+assert.equal(workspaceSelection([nested]).files[0].path,'project/docs/readme.txt');
+console.log('PASS: directory picker keeps relative paths; drop snapshots survive event cleanup, reads beyond 100 entries and keeps empty folders');

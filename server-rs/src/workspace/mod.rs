@@ -5,6 +5,8 @@ pub mod linux_vm;
 pub mod android;
 pub mod linux_proxy;
 pub mod transfer;
+pub mod upload;
+pub mod files;
 use std::{path::{Path,PathBuf},sync::Arc};
 use serde::{Serialize,Deserialize};
 use serde_json::{Value,json};
@@ -13,12 +15,20 @@ use axum::{Json,extract::{State,Query},response::{Response,IntoResponse},http::S
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase")]
 pub struct WorkspaceConfig{pub directory:String,#[serde(default)]pub enabled:bool,#[serde(default)]pub network:bool,#[serde(default="native_engine")]pub engine:String,#[serde(default)]pub auto_start:bool}
-fn native_engine()->String{if cfg!(target_os="android"){"linux".into()}else{"native".into()}}
+fn native_engine()->String{"linux".into()}
 impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false,engine:"linux".into(),auto_start:false}}}
 pub struct WorkspaceHub{pub mutation:Arc<Mutex<()>>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>,pub linux:linux_runtime::LinuxHub}
 impl WorkspaceHub{
  pub fn new()->Self{Self{mutation:Arc::new(Mutex::new(())),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0,linux:linux_runtime::LinuxHub::new()}}
- pub async fn load(&self){*self.config.lock().await=crate::load_json("workspace.json").and_then(|value|serde_json::from_value(value).ok()).unwrap_or_default();}
+ pub async fn load(&self){
+  let mut config:WorkspaceConfig=crate::load_json("workspace.json").and_then(|value|serde_json::from_value(value).ok()).unwrap_or_default();
+  // Retire only the old workspace permission grant; keep its directory and files.
+  if config.engine!="linux"{
+   if config.enabled&&!config.directory.is_empty(){let root=PathBuf::from(&config.directory);let _=blocking(move||{let root=validate_root(&root)?;windows::release(&root)}).await;}
+   config.engine="linux".into();crate::save_json("workspace.json",&json!(config));
+  }
+  *self.config.lock().await=config;
+ }
  pub async fn snapshot(&self)->Value{let config=self.config.lock().await.clone();json!({"directory":config.directory,"enabled":config.enabled,"network":config.network,"engine":config.engine,"autoStart":config.auto_start,"supported":cfg!(windows)||cfg!(target_os="android")})}
  pub async fn root(&self)->Result<PathBuf,String>{let c=self.config.lock().await;if !c.enabled{return Err("工作区已关闭".into());}let root=PathBuf::from(&c.directory);reject_links(&root)?;let normalized=canonical(&root)?;if normalized!=root{return Err("工作区路径已变化，请重新配置".into());}Ok(root)}
 }
@@ -30,9 +40,9 @@ pub async fn configure(State(st):State<Arc<crate::AppState>>,Json(body):Json<Wor
 async fn blocking<T:Send+'static>(work:impl FnOnce()->Result<T,String>+Send+'static)->Result<T,String>{
  tokio::task::spawn_blocking(work).await.map_err(|e|format!("工作区设置未完成：{e}"))?
 }
-pub async fn configure_inner(st:&Arc<crate::AppState>,config:WorkspaceConfig)->Result<(),String>{
+pub async fn configure_inner(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->Result<(),String>{
  if !cfg!(windows)&&!cfg!(target_os="android"){return Err("本机工作区目前支持Windows和Android".into());}
- if !["native","linux"].contains(&config.engine.as_str())||cfg!(target_os="android")&&config.engine!="linux"{return Err("工作区运行方式无效".into());}
+ config.engine="linux".into();
  let permit=st.workspace.mutation.clone().try_lock_owned().map_err(|_|"工作区正在处理其他操作，请稍后再保存".to_string())?;
  let st=st.clone();
  // Finish the serialized change even if its HTTP connection closes midway.
@@ -52,13 +62,7 @@ async fn configure_locked(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->
  config=blocking(move||{
   let root=validate_root(&PathBuf::from(config.directory.trim()))?;
   config.directory=root.to_string_lossy().to_string();
-  let newly_prepared=config.enabled&&config.engine=="native"&&(!old.enabled||old.engine!="native"||old.directory!=config.directory);
-  if newly_prepared{if let Err(error)=windows::prepare(&root){
-   return match windows::release(&root){Ok(())=>Err(error),Err(cleanup)=>Err(format!("{error}；权限清理未完成：{cleanup}"))};
-  }}
-  if old.enabled&&old.engine=="native"&&(old.directory!=config.directory||!config.enabled||config.engine!="native"){if let Err(error)=windows::release(Path::new(&old.directory)){
-   if newly_prepared{let _=windows::release(&root);}return Err(error);
-  }}
+  if old.enabled&&old.engine=="native"{windows::release(Path::new(&old.directory))?;}
   crate::save_json("workspace.json",&json!(config));
   if let Some(error)=crate::storage_fault(){return Err(error);}
   Ok(config)
@@ -122,7 +126,7 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
    let dir=resolve(&root,relative,false)?;
    let _lease=windows::hold_directory(&root,&dir)?;
    let mut entries=Vec::new();
-   for entry in std::fs::read_dir(dir).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?;if entry.file_name()==".shellpilot"{continue;}let m=entry.metadata().map_err(|e|e.to_string())?;entries.push(json!({"name":entry.file_name().to_string_lossy(),"directory":m.is_dir(),"size":m.len()}));if entries.len()>=2000{break;}}
+   for entry in std::fs::read_dir(dir).map_err(|e|e.to_string())?{let entry=entry.map_err(|e|e.to_string())?;if entry.file_name()==".shellpilot"{continue;}let m=entry.metadata().map_err(|e|e.to_string())?;let mtime=m.modified().ok().and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|duration|duration.as_millis() as u64);entries.push(json!({"name":entry.file_name().to_string_lossy(),"directory":m.is_dir(),"size":m.len(),"mtime":mtime}));if entries.len()>=2000{break;}}
    entries.sort_by_key(|e|e["name"].as_str().unwrap_or("").to_lowercase());
    Ok(json!({"path":relative,"entries":entries}))
   },
@@ -150,19 +154,14 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
    Ok(json!({"path":relative,"sha256":crate::operations::hash(content),"written":true}))
   },
   "workspace_mkdir"=>{let path=resolve(&root,relative,true)?;let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;std::fs::create_dir(&path).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
-  "workspace_delete"=>{let path=resolve(&root,relative,false)?;if path==root{return Err("不能删除工作区根目录".into());}let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;if path.is_dir(){std::fs::remove_dir(&path)}else{std::fs::remove_file(&path)}.map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
+  "workspace_delete"|"workspace_rename"|"workspace_copy"=>{let args=args.clone();let name=name.to_string();blocking(move||files::action(&root,&name,&args)).await},
   "workspace_exec"=>{
    let c=st.workspace.config.lock().await.clone();
    let command=crate::operations::text_arg(args,"command")?.to_string();
    let timeout=args["timeout"].as_u64().unwrap_or(120000).clamp(100,900000);
    let cancel=st.agent.lock().await.cancel.as_ref().map(|s|s.subscribe());
-   if c.engine=="linux"{
-    let status=st.workspace.linux.status().await;if status["installed"]!=true{return Err("请先安装Linux工作区".into());}
-    drop(_operation);return linux_vm::execute(st,&root,&command,c.network,timeout).await;
-   }
-   reject_links(&root.join(".shellpilot"))?;
-   drop(_operation);
-   windows::execute(&root,&command,c.network,timeout,cancel,st.workspace.generation.subscribe()).await
+   let status=st.workspace.linux.status().await;if status["installed"]!=true{return Err("请先安装Linux工作区".into());}
+   drop(cancel);drop(_operation);linux_vm::execute(st,&root,&command,c.network,timeout).await
   },
   _=>Err("未知工作区操作".into())
  }
@@ -176,7 +175,7 @@ pub fn schemas()->Vec<Value>{
  schema("workspace_write","创建或更新工作区文件；修改已有文件请传读取时的expectedHash",json!({"path":path,"content":{"type":"string"},"expectedHash":{"type":"string"}}),vec!["path","content"]),
  schema("workspace_mkdir","在工作区创建目录",json!({"path":path}),vec!["path"]),
  schema("workspace_delete","删除工作区文件或空目录",json!({"path":path}),vec!["path"]),
- schema("workspace_exec","在本机工作区执行命令。Linux环境使用/bin/sh，Windows本机环境使用PowerShell。只允许在工作区完成用户任务。",json!({"command":{"type":"string"},"timeout":{"type":"integer"}}),vec!["command"]),
+ schema("workspace_exec","在本机Linux工作区使用/bin/sh执行命令，只允许在工作区完成用户任务。",json!({"command":{"type":"string"},"timeout":{"type":"integer"}}),vec!["command"]),
  schema("workspace_upload_to_server","将工作区文件流式上传到授权服务器的新文件路径；不覆盖已有文件。适合先处理用户文件再上传。",json!({"host":{"type":"string"},"path":path,"remotePath":{"type":"string"}}),vec!["host","path","remotePath"]),
  schema("workspace_download_from_server","将授权服务器文件流式下载到工作区的新文件路径；不覆盖用户已有文件。",json!({"host":{"type":"string"},"path":path,"remotePath":{"type":"string"}}),vec!["host","path","remotePath"])
  ]
@@ -203,34 +202,7 @@ pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<st
  ([(axum::http::header::CONTENT_TYPE,"application/octet-stream".to_string()),(axum::http::header::CONTENT_DISPOSITION,format!("attachment; filename*=UTF-8''{}",percent_encoding::utf8_percent_encode(&name,percent_encoding::NON_ALPHANUMERIC)))],axum::body::Body::from_stream(stream)).into_response()
 }
 pub async fn upload(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>,mut multipart:axum::extract::Multipart)->Response{
- #[cfg(target_os="android")]{if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}return result(android::upload(&args,&mut multipart).await);}
- result(async{
-  use tokio::io::AsyncWriteExt;
-  let _lock=st.workspace.mutation.lock().await;
-  let root=st.workspace.root().await?;
-  let directory=args.get("path").cloned().unwrap_or_default();
-  let dir=resolve(&root,&directory,false)?;
-  let _lease=windows::hold_directory(&root,&dir)?;
-  if !dir.is_dir(){return Err("上传目标必须是工作区文件夹".into());}
-  let mut files=Vec::new();
-  while let Some(mut field)=multipart.next_field().await.map_err(|e|e.to_string())?{
-   let name=field.file_name().ok_or("请选择文件")?.to_string();
-   if name.contains(['/','\\',':'])||name=="."||name==".."{return Err("文件名无效".into());}
-   let relative=if directory.is_empty(){name.clone()}else{format!("{directory}/{name}")};
-   let path=resolve(&root,&relative,true)?;
-   if path.exists(){return Err(format!("文件 {name} 已存在，请先改名或删除旧文件"));}
-   let temp=dir.join(format!(".upload-{}",uuid::Uuid::new_v4().simple()));
-   let upload=async{
-    let mut file=tokio::fs::OpenOptions::new().write(true).create_new(true).open(&temp).await.map_err(|e|e.to_string())?;
-    while let Some(chunk)=field.chunk().await.map_err(|e|e.to_string())?{file.write_all(&chunk).await.map_err(|e|e.to_string())?;}
-    file.sync_all().await.map_err(|e|e.to_string())?;drop(file);
-    tokio::fs::rename(&temp,&path).await.map_err(|e|e.to_string())?;Ok::<_,String>(())
-   }.await;
-   if let Err(error)=upload{let _=tokio::fs::remove_file(temp).await;return Err(error);}
-   files.push(relative);
-  }
-  Ok(json!({"files":files}))
- }.await)
+ result(upload::receive(&st,&args,&mut multipart).await)
 }
 #[cfg(test)]mod tests{
  use super::*;

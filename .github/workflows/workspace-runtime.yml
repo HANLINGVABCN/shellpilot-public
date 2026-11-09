@@ -1,0 +1,124 @@
+name: workspace-runtime
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  component:
+    strategy:
+      matrix:
+        arch: [aarch64, x86_64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Reuse fixed Alpine and native binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p runtime-build/original
+          gh release download linux-alpine-3.24.4-v1 --repo "$GITHUB_REPOSITORY" --pattern "ShellPilot-Linux-Android-$ARCH.apk" --dir runtime-build/original
+          python3 - "$ARCH" <<'PY'
+          import json,sys,pathlib,hashlib
+          file=pathlib.Path('runtime-build/original')/f'ShellPilot-Linux-Android-{sys.argv[1]}.apk'
+          digest='b1271cce4fbcc462b04d6987067d6db25c2db743ad81d94fac826965a539ebde' if sys.argv[1]=='aarch64' else '7d8590240b924984e75b62b2963e1e26325b33c459cf5d12fab0e149ea61c69f'
+          assert hashlib.sha256(file.read_bytes()).hexdigest()==digest
+          PY
+      - name: Repackage service and verify fixed signature
+        env:
+          KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+          CERT_SHA256: ${{ vars.SHELLPILOT_ANDROID_CERT_SHA256 }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > /tmp/workspace-signing.p12
+          trap 'rm -f /tmp/workspace-signing.p12' EXIT
+          export SIGNING_KEY_PATH=/tmp/workspace-signing.p12
+          bash scripts/repackage-android-runtime.sh "$ARCH" "runtime-build/original/ShellPilot-Linux-Android-$ARCH.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workspace-android-${{ matrix.arch }}
+          path: |
+            runtime-build/*.apk
+            runtime-build/*service-sources.tar.gz
+  android-check:
+    needs: component
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - uses: actions/download-artifact@v4
+        with:
+          name: workspace-android-x86_64
+          path: runtime-build/component
+      - name: Build signed instrumentation
+        env:
+          KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > /tmp/workspace-signing.p12
+          trap 'rm -f /tmp/workspace-signing.p12' EXIT
+          export SIGNING_KEY_PATH=/tmp/workspace-signing.p12
+          bash scripts/build-runtime-test.sh
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          disable-animations: true
+          script: |
+            adb install runtime-build/component/ShellPilot-Linux-Android-x86_64.apk
+            adb install runtime-build/instrumentation/signed.apk
+            adb shell 'echo PRIVATE_CANARY > /data/local/tmp/shellpilot-private-canary; chmod 600 /data/local/tmp/shellpilot-private-canary'
+            adb shell am instrument -w app.shellpilot.workspace.test/.RuntimeTest | tee runtime-build/test.txt
+            grep -F 'PASS: Android PRoot' runtime-build/test.txt
+  publish:
+    needs: android-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: workspace-android-*
+          merge-multiple: true
+          path: runtime-assets
+      - name: Publish verified optional component
+        run: |
+          set -euo pipefail
+          tag=linux-alpine-3.24.4-v2
+          cp runtime/README.md runtime-assets/RUNTIME-README.md
+          (cd runtime-assets && sha256sum ./*.apk ./*.tar.gz > SHA256SUMS.txt)
+          gh release create "$tag" runtime-assets/* --title 'ShellPilot · 可选 Linux 运行组件' --notes '安卓运行组件新增独立终端会话和目录文件操作，固定签名、包名及工作文件保留。仅重新编译服务层，复用已校验的 Alpine 和原生运行器；Windows 继续复用原组件，无需再次下载。真实安卓模拟器检查通过后发布。' --target "$GITHUB_SHA" --prerelease --latest=false
+          python3 scripts/workspace-runtime-manifest.py runtime-assets "$tag"
+          gh release upload "$tag" runtime-assets/runtime-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workspace-runtime-manifest
+          path: runtime-assets/runtime-manifest.json

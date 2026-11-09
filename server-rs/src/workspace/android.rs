@@ -39,17 +39,18 @@ pub async fn download(args:&std::collections::HashMap<String,String>)->axum::res
  let name=std::path::Path::new(&path).file_name().unwrap_or_default().to_string_lossy();
  ([(axum::http::header::CONTENT_TYPE,"application/octet-stream".into()),(axum::http::header::CONTENT_DISPOSITION,format!("attachment; filename*=UTF-8''{}",percent_encoding::utf8_percent_encode(&name,percent_encoding::NON_ALPHANUMERIC)))],axum::body::Body::from_stream(stream)).into_response()
 }
-pub async fn terminal(st:std::sync::Arc<crate::AppState>,socket:axum::extract::ws::WebSocket)->Result<(),String>{
+pub async fn terminal(st:std::sync::Arc<crate::AppState>,socket:axum::extract::ws::WebSocket,path:String)->Result<(),String>{
  use futures_util::{SinkExt,StreamExt};
  let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("工作区已关闭".into());}
- request(json!({"op":"terminal-open","network":config.network})).await?;
+ let session=uuid::Uuid::new_v4().to_string();
+ request(json!({"op":"terminal-open","session":session,"path":path,"network":config.network})).await?;
  st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);st.workspace.linux.touch();
  struct Session(std::sync::Arc<crate::AppState>);impl Drop for Session{fn drop(&mut self){self.0.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);self.0.workspace.linux.touch();}}
  let _session=Session(st.clone());
  let (mut sender,mut receiver)=socket.split();let mut interval=tokio::time::interval(std::time::Duration::from_millis(150));let mut generation=st.workspace.generation.subscribe();
- loop{tokio::select!{
-  _=interval.tick()=>{let output=request(json!({"op":"terminal-output"})).await?;if let Some(text)=output["output"].as_str(){if !text.is_empty()&&sender.send(axum::extract::ws::Message::Text(text.into())).await.is_err(){break;}}if output["closed"]==true{break;}},
-  message=receiver.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let message:Value=serde_json::from_str(&text).unwrap_or(json!({}));if message["type"]=="resize"{request(json!({"op":"terminal-resize","cols":message["cols"],"rows":message["rows"]})).await?;}else if message["type"]=="input"{request(json!({"op":"terminal-input","data":message["data"]})).await?;}},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
+ let result=async{loop{tokio::select!{
+  _=interval.tick()=>{let output=request(json!({"op":"terminal-output","session":session})).await?;if let Some(text)=output["output"].as_str(){if !text.is_empty()&&sender.send(axum::extract::ws::Message::Text(text.into())).await.is_err(){break;}}if output["closed"]==true{break;}},
+  message=receiver.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let message:Value=serde_json::from_str(&text).unwrap_or(json!({}));if message["type"]=="resize"{request(json!({"op":"terminal-resize","session":session,"cols":message["cols"],"rows":message["rows"]})).await?;}else if message["type"]=="input"{request(json!({"op":"terminal-input","session":session,"data":message["data"]})).await?;}},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
   _=generation.changed()=>break
- }}let _=request(json!({"op":"terminal-close"})).await;Ok(())
+ }}Ok::<(),String>(())}.await;let _=request(json!({"op":"terminal-close","session":session})).await;st.broadcast_all(&json!({"type":"workspace-files-changed"}));result
 }

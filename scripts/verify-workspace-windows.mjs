@@ -2,79 +2,34 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-assert(process.env.GITHUB_ACTIONS==='true'&&process.platform==='win32','Run sandbox checks only on isolated Windows CI');
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(process.env.USERPROFILE,'Documents','shellpilot-workspace-'+Date.now()),data=path.join(dir,'data');
-fs.mkdirSync(root);fs.mkdirSync(data);
-const outside=path.join(process.env.USERPROFILE,'Documents','shellpilot-outside-'+Date.now());
-fs.mkdirSync(outside,{recursive:true});const canary=path.join(outside,'private.txt');fs.writeFileSync(canary,'outside-fixture-must-be-protected');
-const canaryAcl=()=>execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"[IO.File]::GetAccessControl('"+canary.replaceAll("'","''")+"').GetSecurityDescriptorSddlForm([Security.AccessControl.AccessControlSections]::All)"],{encoding:'utf8',timeout:5000}).trim();
-const initialAcl=canaryAcl();
-const script=path.resolve('server-rs/target/debug/shellpilot-server.exe');
-const backend=spawn(script,[],{env:{...process.env,SHELLPILOT_DATA:data,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
-let base;
-try{
- base=await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('Workspace backend timeout')),15000);backend.stdout.on('data',b=>{const m=b.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(m){clearTimeout(t);resolve(m[0]);}});});
- const api=async(route,method='GET',body,ok=true)=>{
-  const res=await fetch(base+'/api'+route,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000)});const data=await res.json();
-  assert.equal(res.ok,ok,route+': '+JSON.stringify(data));return data;
- };
- const action=async(name,args)=>api('/workspace/action','POST',{name,arguments:args});
- const execute=command=>action('workspace_exec',{command,timeout:45000});
- const saving=api('/workspace','PUT',{directory:root,enabled:true,network:false});
- for(let attempt=0;attempt<4;attempt++){
-  const res=await fetch(base+'/api/settings',{signal:AbortSignal.timeout(2000)});assert(res.ok,'Settings must remain readable while workspace permissions are prepared');
- }
- await saving;assert.equal(canaryAcl(),initialAcl,'Ancestor permission changes must not rewrite descendant ACLs');
- await api('/workspace','PUT',{directory:root,enabled:true,network:false});
- console.log(execFileSync('icacls.exe',[root],{encoding:'utf8',timeout:5000}));
- const crossSite=await fetch(base+'/api/workspace/action',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://outside.example.com'},body:JSON.stringify({name:'workspace_list',arguments:{}})});
- assert.equal(crossSite.status,403,'Unrelated web pages must not invoke local workspace tools');
- assert.equal((await api('/workspace')).enabled,true);
- await action('workspace_write',{path:'input.txt',content:'hello workspace'});
- assert.equal((await action('workspace_read',{path:'input.txt'})).content,'hello workspace');
- const pending=execute("Get-Content -LiteralPath './input.txt'; Set-Content -LiteralPath './output.txt' -Value 'sandbox output' -Encoding UTF8; $env:USERNAME");
- const trace=setTimeout(()=>{
-  try{console.log(execFileSync('powershell.exe',['-NoProfile','-Command',"Get-Process powershell -ErrorAction SilentlyContinue|Select-Object Id,CPU,Handles,Threads,Responding|ConvertTo-Json -Depth 1;Get-WinEvent -FilterHashtable @{LogName='Application';StartTime=(Get-Date).AddMinutes(-2)} -MaxEvents 4 -ErrorAction SilentlyContinue|Select-Object ProviderName,Id,Message|ConvertTo-Json"],{encoding:'utf8',timeout:5000}));}catch{}
- },5000);
- const run=await pending;clearTimeout(trace);
- assert.equal(run.exitCode,0,JSON.stringify(run));assert(run.stdout.includes('hello workspace'));assert(fs.readFileSync(path.join(root,'output.txt'),'utf8').includes('sandbox output'));
- assert.equal(run.sandbox,'AppContainer');
- const outsidePs=canary.replaceAll("'","''");
- const denied=await execute("Get-Content -LiteralPath '"+outsidePs+"'");
- assert.notEqual(denied.exitCode,0,'AppContainer must deny outside user-file reads');
- assert(!denied.stdout.includes('outside-fixture-must-be-protected'));
- const modify=await execute("Set-Content -LiteralPath '"+outsidePs+"' -Value 'bad'");
- assert.notEqual(modify.exitCode,0);assert.equal(fs.readFileSync(canary,'utf8'),'outside-fixture-must-be-protected');
- for(const p of ['../private.txt','C:/Windows/win.ini','.shellpilot/task.ps1']){
-  await api('/workspace/action','POST',{name:'workspace_read',arguments:{path:p}},false);
- }
- const previous=await action('workspace_read',{path:'input.txt'});
- await api('/workspace/action','POST',{name:'workspace_write',arguments:{path:'input.txt',content:'bad',expectedHash:'wrong'}},false);
- assert.equal((await action('workspace_read',{path:'input.txt'})).content,previous.content);
- // A junction in the workspace cannot bypass the server or AppContainer boundary.
- const junction=path.join(root,'outside-link');
- fs.symlinkSync(outside,junction,'junction');
- await api('/workspace/action','POST',{name:'workspace_read',arguments:{path:'outside-link/private.txt'}},false);
- const linkRead=await execute("Get-Content -LiteralPath './outside-link/private.txt'");
- assert.notEqual(linkRead.exitCode,0);assert(!linkRead.stdout.includes('outside-fixture-must-be-protected'));fs.unlinkSync(junction);
- const hardlink=path.join(root,'private-hardlink.txt');fs.linkSync(canary,hardlink);
- await api('/workspace/action','POST',{name:'workspace_read',arguments:{path:'private-hardlink.txt'}},false);
- await api('/workspace/action','POST',{name:'workspace_write',arguments:{path:'private-hardlink.txt',content:'bad'}},false);
- fs.unlinkSync(hardlink);assert.equal(fs.readFileSync(canary,'utf8'),'outside-fixture-must-be-protected');
- const form=new FormData();form.append('files',new Blob(['uploaded workspace file']),'upload.txt');
- const upload=await fetch(base+'/api/workspace/upload',{method:'POST',body:form});assert(upload.ok);
- const download=await fetch(base+'/api/workspace/download?path=upload.txt');assert.equal(await download.text(),'uploaded workspace file');
- const timed=await action('workspace_exec',{command:"Start-Sleep -Seconds 20; Set-Content late.txt 'bad'",timeout:300});
- assert(timed.error?.includes('超时'));await new Promise(r=>setTimeout(r,500));assert(!fs.existsSync(path.join(root,'late.txt')));
- await api('/workspace','PUT',{directory:root,enabled:false,network:false});
- assert.equal(canaryAcl(),initialAcl,'Disabling must preserve unrelated descendant ACLs');
- await api('/workspace/action','POST',{name:'workspace_list',arguments:{}},false);
- console.log('PASS: actual AppContainer workspace read/write/command, private-file denial, junction denial, uploads/downloads, stale hashes, timeout and disable');
-}finally{
- if(backend.exitCode===null){backend.kill();await once(backend,'exit');}
- fs.rmSync(outside,{recursive:true,force:true});
- fs.rmSync(root,{recursive:true,force:true});
-}
+assert(process.env.GITHUB_ACTIONS==='true'&&process.platform==='win32','Run only in isolated Windows CI');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(process.env.USERPROFILE,'Documents','workspace-'+Date.now()),data=path.join(temp,'data');
+fs.mkdirSync(root);fs.mkdirSync(data);fs.writeFileSync(path.join(root,'keep.txt'),'keep existing data');
+fs.writeFileSync(path.join(data,'workspace.json'),JSON.stringify({directory:root,engine:'native',enabled:true,network:false,autoStart:false}));
+const backend=spawn(path.resolve('server-rs/target/debug/shellpilot-server.exe'),[],{env:{...process.env,SHELLPILOT_DATA:data,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
+try {
+ const base=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Backend startup timeout')),20000);backend.stdout.on('data',data=>{const match=data.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);resolve(match[0]);}});});
+ const api=async(route,method='GET',body,ok=true)=>{const res=await fetch(base+'/api'+route,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const value=await res.json();assert.equal(res.ok,ok,JSON.stringify(value));return value;};
+ const action=(name,args,ok=true)=>api('/workspace/action','POST',{name,arguments:args},ok);
+ const config=await api('/workspace');assert.equal(config.engine,'linux');assert.equal(config.directory,root);assert(config.enabled);assert.equal(fs.readFileSync(path.join(root,'keep.txt'),'utf8'),'keep existing data');
+ assert.equal((await api('/workspace/linux')).installed,false);
+ await action('workspace_exec',{command:'echo SHOULD_NOT_RUN'},false);
+ const send=async(files,dirs=[],ok=true,target='')=>{const form=new FormData();form.append('manifest',JSON.stringify({files:files.map(item=>item[0]),directories:dirs}));for(const [name,text]of files)form.append('files',new Blob([text]),name.split('/').pop());const response=await fetch(base+'/api/workspace/upload?path='+encodeURIComponent(target),{method:'POST',body:form});const value=await response.json();assert.equal(response.ok,ok,JSON.stringify(value));return value;};
+ await send([['项目/docs/one.txt','one'],['项目/images/two.bin',new Uint8Array([0,1,2,255])]],['项目/empty']);
+ assert.equal(fs.readFileSync(path.join(root,'项目/docs/one.txt'),'utf8'),'one');assert(fs.statSync(path.join(root,'项目/empty')).isDirectory());
+ assert.deepEqual([...fs.readFileSync(path.join(root,'项目/images/two.bin'))],[0,1,2,255]);
+ await send([['项目/docs/one.txt','overwrite']],[],false);assert.equal(fs.readFileSync(path.join(root,'项目/docs/one.txt'),'utf8'),'one');
+ for(const invalid of ['../secret.txt','x/.shellpilot/key','/absolute','a\\b'])await send([[invalid,'bad']],[],false);
+ const list=await api('/workspace/files?path='+encodeURIComponent('项目'));assert(list.entries.some(entry=>entry.name==='docs'&&entry.directory));
+ await action('workspace_copy',{path:'',paths:['项目']});assert.equal(fs.readFileSync(path.join(root,'项目 (2)/docs/one.txt'),'utf8'),'one');
+ await action('workspace_rename',{path:'项目 (2)',to:'renamed'});assert(fs.existsSync(path.join(root,'renamed/empty')));
+ await action('workspace_copy',{path:'项目/empty',paths:['renamed'],move:true});assert(fs.existsSync(path.join(root,'项目/empty/renamed/docs/one.txt')));
+ await action('workspace_copy',{path:'项目/docs',paths:['项目']},false);
+ await action('workspace_delete',{path:'项目/empty/renamed',recursive:true});assert(!fs.existsSync(path.join(root,'项目/empty/renamed')));
+ const junction=path.join(root,'escape');fs.symlinkSync(temp,junction,'junction');await send([['escape/outside','bad']],[],false);assert(!fs.existsSync(path.join(temp,'outside')));fs.unlinkSync(junction);
+ const crossSite=await fetch(base+'/api/workspace/action',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://outside.example.com'},body:JSON.stringify({name:'workspace_list',arguments:{}})});assert.equal(crossSite.status,403);
+ await api('/workspace','PUT',{directory:root,enabled:false,engine:'native',network:false});assert.equal((await api('/workspace')).engine,'linux');assert.equal(fs.readFileSync(path.join(root,'keep.txt'),'utf8'),'keep existing data');
+ console.log('PASS: old directory retained, Linux unified without auto-install; nested/empty folders, binary upload, collisions, copy/move/rename/delete, traversal/junction and cross-site denial');
+} finally {if(backend.exitCode===null){backend.kill();await once(backend,'exit');}fs.rmSync(root,{recursive:true,force:true});fs.rmSync(temp,{recursive:true,force:true});}
