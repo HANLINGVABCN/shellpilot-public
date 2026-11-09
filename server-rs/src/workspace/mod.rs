@@ -185,6 +185,10 @@ pub async fn pick(State(st):State<Arc<crate::AppState>>)->Response{
  let picker=st.folder_picker.read().unwrap().clone();
  match picker{Some(picker)=>match blocking(move||picker()).await{Ok(path)=>Json(json!({"directory":path})).into_response(),Err(e)=>result(Err(e))},None=>result(Err("请输入本机目录完整路径".into()))}
 }
+pub async fn user_download(State(st):State<Arc<crate::AppState>>,Json(body):Json<Value>)->Response{
+ if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}
+ result(android::request(json!({"op":"user-export","path":body["path"]})).await)
+}
 pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{
  #[cfg(target_os="android")]{if !st.workspace.config.lock().await.enabled{return result(Err("工作区已关闭".into()));}return android::download(&args).await;}
  let root=match st.workspace.root().await{Ok(root)=>root,Err(e)=>return result(Err(e))};

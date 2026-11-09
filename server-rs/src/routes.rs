@@ -1270,6 +1270,7 @@ pub fn router(st: App) -> Router {
         .route("/api/workspace/action",post(crate::workspace::action))
         .route("/api/workspace/upload",post(crate::workspace::upload))
         .route("/api/workspace/download",get(crate::workspace::download))
+        .route("/api/workspace/user-download",post(crate::workspace::user_download))
         .route("/api/workspace/linux",get(crate::workspace::linux_runtime::status))
         .route("/api/workspace/linux/install",post(crate::workspace::linux_runtime::install_route))
         .route("/api/workspace/linux/pause",post(crate::workspace::linux_runtime::pause))
