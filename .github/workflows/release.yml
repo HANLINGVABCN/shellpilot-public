@@ -5,11 +5,11 @@ on:
       build_run:
         description: 'Successful Windows and Android build run ID'
         required: true
-        default: '42534567176'
+        default: '42575883229'
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261109-ai-workspace'
+        default: 'build-20261109-workspace-save'
       title:
         description: 'Release title'
         required: true
@@ -43,7 +43,7 @@ jobs:
           test "$(jq -r .conclusion <<< "$run")" = success
           source_sha=$(jq -r .head_sha <<< "$run")
           git merge-base --is-ancestor "$source_sha" HEAD
-          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri index.html package.json package-lock.json vite.config.mjs scripts
+          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri index.html package.json package-lock.json vite.config.mjs scripts ':(exclude)scripts/verify-*'
           printf '%s\n' "BUILD_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo 'Release already exists; choose a new tag instead of replacing published files.' >&2
@@ -81,18 +81,17 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：改进 AI 排队、回答统计、简洁记忆与本机工作区。
+          ShellPilot：修复工作区保存拖住配置页的问题，增加保存转圈和等待说明。
 
-          - 输出中发送消息进入队列，暂停和停止按钮保持可用；点击排队消息取回主输入框，保留原草稿，已经开始的任务不会重复执行。未保存偏好的新对话默认完全托管，切换模式不弹浏览器确认。
-          - 回答底部使用小字显示年月日时间、输入（缓存命中）、输出、时长、tok/s 与服务商/模型。完整数字每三位加英文逗号，字段间仅用空格，统计随历史保存；用量缺失显示 —。
-          - 记忆保留检索筛选，取消必填主题，改为独立滚动的单行勾选、编辑和启停列表，支持批量删除。自动保存开关不影响已有启用记忆。
-          - Windows 配置页可选择本机工作区，AI 可以读写文件、上传下载和运行 PowerShell。命令使用 AppContainer，联网独立控制；停止、超时和停用结束相关进程。
+          - 工作区权限准备在后台线程处理，保存时配置、机器和聊天接口保持响应。
+          - 上级目录仅设置当前目录自身的通行权限，不再让权限工具遍历用户目录；保留无关文件权限与 AppContainer 隔离。
+          - 同一个已启用目录重复保存不重新准备权限；权限辅助进程超时会结束并在页面显示原因，保存不会一直等下去。
+          - 保存按钮显示「保存中…」，旁边转圈提示「正在保存中，权限设置可能耗时较长，请稍候」；成功或失败均恢复按钮，不弹窗。
+          - 配置请求有等待上限，失败可在页面重新加载。连接中断后的保存串行完成，不自动重复提交用户操作。
 
-          统计示例：`2026-11-09 03:20 ↑1,200（800） ↓300 12s 25tok/s Provider/Model`
+          [本次验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42576484653)覆盖实际 Windows 用户目录工作区、保存中读取配置、邻近文件权限保持、辅助进程超时，以及文件协作、外部文件隔离与聊天回归。
 
-          [实际 Windows 隔离及回归验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42534563738)已通过：工作区内读写和命令产出、外部私人文件与目录联接拒绝、上传下载、哈希冲突、超时及停用回收；聊天、记忆、终端阅读、AI/MCP 和数据恢复检查通过。安装器另有连续覆盖安装检查。
-
-          原数据目录保留，Android 沿用固定 ShellPilot 签名。工作区第一版用于 Windows，Android 保留现有功能。外部 MCP 暂不取得本机工作区权限；工作区的范围与用法见 [说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。
+          原数据目录保留，Android 沿用固定 ShellPilot 签名。工作区用于 Windows，Android 保留现有功能。外部 MCP 的权限与授权机器范围不变；工作区使用方法见 [说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。
 
           聊天阅读仍只显示侧边向下箭头。
 
