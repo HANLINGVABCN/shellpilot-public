@@ -57,6 +57,7 @@ export PROOT_UNBUNDLE_LOADER=/system
 make -C "$work/src/proot-5.1.107.102/src" -j2 CC="$CC" LD="$CC" STRIP="$STRIP" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" CPPFLAGS="-DARG_MAX=131072 -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I$work -I. -DVERSION=\"5.1.107.102\"" LDFLAGS="$work/libtalloc.a -Wl,-z,noexecstack -Wl,-z,max-page-size=16384"
 cp "$work/src/proot-5.1.107.102/src/proot" "$work/jni/lib/$abi/libproot_exec.so"
 cp "$work/src/proot-5.1.107.102/src/loader/loader" "$work/jni/lib/$abi/libproot_loader.so"
+"$CC" -O2 -fPIE -pie -Wl,-z,max-page-size=16384 runtime/android/terminal.c -o "$work/jni/lib/$abi/libterminal_exec.so"
 curl -fL --retry 4 "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/$arch/alpine-minirootfs-3.24.4-$arch.tar.gz" -o "$work/assets/rootfs.tar.gz"
 digest=4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de
 if test "$arch" = x86_64;then digest=cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012;fi

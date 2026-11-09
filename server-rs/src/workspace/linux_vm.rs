@@ -147,7 +147,7 @@ pub async fn terminal(st:Arc<crate::AppState>,socket:axum::extract::ws::WebSocke
  vm.as_mut().unwrap().terminal_baseline=Some(baseline.clone());st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);drop(vm);
  let (mut output,mut input)=socket.split();let mut generation=st.workspace.generation.subscribe();
  loop{tokio::select!{
-  message=input.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let _=channel.data(text.as_bytes()).await;st.workspace.linux.touch();},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
+  message=input.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let message:Value=serde_json::from_str(&text).unwrap_or(json!({}));if message["type"]=="resize"{let cols=message["cols"].as_u64().unwrap_or(100).clamp(2,500) as u32;let rows=message["rows"].as_u64().unwrap_or(28).clamp(2,500) as u32;let _=channel.window_change(cols,rows,0,0).await;}else if message["type"]=="input"{let _=channel.data(message["data"].as_str().unwrap_or("").as_bytes()).await;}st.workspace.linux.touch();},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
   message=channel.wait()=>match message{Some(ChannelMsg::Data{data})|Some(ChannelMsg::ExtendedData{data,..})=>{if output.send(axum::extract::ws::Message::Binary(data.to_vec().into())).await.is_err(){break;}},Some(ChannelMsg::Close)|None=>break,_=>{}},
   _=generation.changed()=>break
  }}

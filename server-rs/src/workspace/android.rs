@@ -49,7 +49,7 @@ pub async fn terminal(st:std::sync::Arc<crate::AppState>,socket:axum::extract::w
  let (mut sender,mut receiver)=socket.split();let mut interval=tokio::time::interval(std::time::Duration::from_millis(150));let mut generation=st.workspace.generation.subscribe();
  loop{tokio::select!{
   _=interval.tick()=>{let output=request(json!({"op":"terminal-output"})).await?;if let Some(text)=output["output"].as_str(){if !text.is_empty()&&sender.send(axum::extract::ws::Message::Text(text.into())).await.is_err(){break;}}if output["closed"]==true{break;}},
-  message=receiver.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}request(json!({"op":"terminal-input","data":text.as_str()})).await?;},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
+  message=receiver.next()=>match message{Some(Ok(axum::extract::ws::Message::Text(text)))=>{if text.len()>65536{break;}let message:Value=serde_json::from_str(&text).unwrap_or(json!({}));if message["type"]=="resize"{request(json!({"op":"terminal-resize","cols":message["cols"],"rows":message["rows"]})).await?;}else if message["type"]=="input"{request(json!({"op":"terminal-input","data":message["data"]})).await?;}},Some(Ok(axum::extract::ws::Message::Close(_)))|None=>break,_=>{}},
   _=generation.changed()=>break
  }}let _=request(json!({"op":"terminal-close"})).await;Ok(())
 }
