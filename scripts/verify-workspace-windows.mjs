@@ -6,21 +6,28 @@ import http from 'node:http';
 import {spawn,execFileSync} from 'node:child_process';
 import {once} from 'node:events';
 assert(process.env.GITHUB_ACTIONS==='true'&&process.platform==='win32','Run sandbox checks only on isolated Windows CI');
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(dir,'working'),data=path.join(dir,'data');
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'sp-workspace-')),root=path.join(process.env.USERPROFILE,'Documents','shellpilot-workspace-'+Date.now()),data=path.join(dir,'data');
 fs.mkdirSync(root);fs.mkdirSync(data);
 const outside=path.join(process.env.USERPROFILE,'Documents','shellpilot-outside-'+Date.now());
 fs.mkdirSync(outside,{recursive:true});const canary=path.join(outside,'private.txt');fs.writeFileSync(canary,'outside-fixture-must-be-protected');
+const canaryAcl=()=>execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',"(Get-Acl -LiteralPath '"+canary.replaceAll("'","''")+"').Sddl"],{encoding:'utf8',timeout:5000}).trim();
+const initialAcl=canaryAcl();
 const script=path.resolve('server-rs/target/debug/shellpilot-server.exe');
 const backend=spawn(script,[],{env:{...process.env,SHELLPILOT_DATA:data,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
 let base;
 try{
  base=await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('Workspace backend timeout')),15000);backend.stdout.on('data',b=>{const m=b.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(m){clearTimeout(t);resolve(m[0]);}});});
  const api=async(route,method='GET',body,ok=true)=>{
-  const res=await fetch(base+'/api'+route,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const data=await res.json();
+  const res=await fetch(base+'/api'+route,{method,headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(20000)});const data=await res.json();
   assert.equal(res.ok,ok,route+': '+JSON.stringify(data));return data;
  };
  const action=async(name,args)=>api('/workspace/action','POST',{name,arguments:args});
  const execute=command=>action('workspace_exec',{command,timeout:45000});
+ const saving=api('/workspace','PUT',{directory:root,enabled:true,network:false});
+ for(let attempt=0;attempt<4;attempt++){
+  const res=await fetch(base+'/api/settings',{signal:AbortSignal.timeout(2000)});assert(res.ok,'Settings must remain readable while workspace permissions are prepared');
+ }
+ await saving;assert.equal(canaryAcl(),initialAcl,'Ancestor permission changes must not rewrite descendant ACLs');
  await api('/workspace','PUT',{directory:root,enabled:true,network:false});
  console.log(execFileSync('icacls.exe',[root],{encoding:'utf8',timeout:5000}));
  const crossSite=await fetch(base+'/api/workspace/action',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://outside.example.com'},body:JSON.stringify({name:'workspace_list',arguments:{}})});
@@ -63,9 +70,11 @@ try{
  const timed=await action('workspace_exec',{command:"Start-Sleep -Seconds 20; Set-Content late.txt 'bad'",timeout:300});
  assert(timed.error?.includes('超时'));await new Promise(r=>setTimeout(r,500));assert(!fs.existsSync(path.join(root,'late.txt')));
  await api('/workspace','PUT',{directory:root,enabled:false,network:false});
+ assert.equal(canaryAcl(),initialAcl,'Disabling must preserve unrelated descendant ACLs');
  await api('/workspace/action','POST',{name:'workspace_list',arguments:{}},false);
  console.log('PASS: actual AppContainer workspace read/write/command, private-file denial, junction denial, uploads/downloads, stale hashes, timeout and disable');
 }finally{
  if(backend.exitCode===null){backend.kill();await once(backend,'exit');}
  fs.rmSync(outside,{recursive:true,force:true});
+ fs.rmSync(root,{recursive:true,force:true});
 }

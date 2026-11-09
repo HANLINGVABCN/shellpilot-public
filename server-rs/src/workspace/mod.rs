@@ -9,9 +9,9 @@ use axum::{Json,extract::{State,Query},response::{Response,IntoResponse},http::S
 #[serde(rename_all="camelCase")]
 pub struct WorkspaceConfig{pub directory:String,#[serde(default)]pub enabled:bool,#[serde(default)]pub network:bool}
 impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false}}}
-pub struct WorkspaceHub{pub mutation:Mutex<()>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>}
+pub struct WorkspaceHub{pub mutation:Arc<Mutex<()>>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>}
 impl WorkspaceHub{
- pub fn new()->Self{Self{mutation:Mutex::new(()),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0}}
+ pub fn new()->Self{Self{mutation:Arc::new(Mutex::new(())),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0}}
  pub async fn load(&self){*self.config.lock().await=serde_json::from_value(crate::load_json_or("workspace.json",json!({"directory":"","enabled":false,"network":false}))).unwrap_or_default();}
  pub async fn snapshot(&self)->Value{let config=self.config.lock().await.clone();json!({"directory":config.directory,"enabled":config.enabled,"network":config.network,"supported":cfg!(windows)})}
  pub async fn root(&self)->Result<PathBuf,String>{let c=self.config.lock().await;if !c.enabled{return Err("工作区已关闭".into());}let root=PathBuf::from(&c.directory);reject_links(&root)?;let normalized=canonical(&root)?;if normalized!=root{return Err("工作区路径已变化，请重新配置".into());}Ok(root)}
@@ -21,19 +21,34 @@ pub async fn status(State(st):State<Arc<crate::AppState>>)->Json<Value>{Json(st.
 pub async fn configure(State(st):State<Arc<crate::AppState>>,Json(body):Json<WorkspaceConfig>)->Response{
  result(configure_inner(&st,body).await.map(|_|json!({"ok":true})))
 }
-pub async fn configure_inner(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->Result<(),String>{
+async fn blocking<T:Send+'static>(work:impl FnOnce()->Result<T,String>+Send+'static)->Result<T,String>{
+ tokio::task::spawn_blocking(work).await.map_err(|e|format!("工作区设置未完成：{e}"))?
+}
+pub async fn configure_inner(st:&Arc<crate::AppState>,config:WorkspaceConfig)->Result<(),String>{
  if !cfg!(windows){return Err("本机隔离工作区目前支持Windows".into());}
- let _lock=st.workspace.mutation.lock().await;
+ let permit=st.workspace.mutation.clone().try_lock_owned().map_err(|_|"工作区正在处理其他操作，请稍后再保存".to_string())?;
+ let st=st.clone();
+ // Finish the serialized change even if its HTTP connection closes midway.
+ tokio::spawn(async move{let _permit=permit;configure_locked(&st,config).await}).await.map_err(|e|format!("工作区设置未完成：{e}"))?
+}
+async fn configure_locked(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->Result<(),String>{
  if st.agent.lock().await.busy{return Err("先停止当前AI任务，再修改工作区".into());}
- let path=PathBuf::from(config.directory.trim());
- let root=validate_root(&path)?;
- config.directory=root.to_string_lossy().to_string();
  let old=st.workspace.config.lock().await.clone();
- if config.enabled {if let Err(error)=windows::prepare(&root){let _=windows::release(&root);return Err(error);}}
- if old.enabled && (old.directory!=config.directory||!config.enabled){windows::release(Path::new(&old.directory))?;}
  st.workspace.generation.send_modify(|n|*n+=1);
- crate::save_json("workspace.json",&json!(config));
- if let Some(error)=crate::storage_fault(){return Err(error);}
+ config=blocking(move||{
+  let root=validate_root(&PathBuf::from(config.directory.trim()))?;
+  config.directory=root.to_string_lossy().to_string();
+  let newly_prepared=config.enabled&&(!old.enabled||old.directory!=config.directory);
+  if newly_prepared{if let Err(error)=windows::prepare(&root){
+   return match windows::release(&root){Ok(())=>Err(error),Err(cleanup)=>Err(format!("{error}；权限清理未完成：{cleanup}"))};
+  }}
+  if old.enabled&&(old.directory!=config.directory||!config.enabled){if let Err(error)=windows::release(Path::new(&old.directory)){
+   if newly_prepared{let _=windows::release(&root);}return Err(error);
+  }}
+  crate::save_json("workspace.json",&json!(config));
+  if let Some(error)=crate::storage_fault(){return Err(error);}
+  Ok(config)
+ }).await?;
  *st.workspace.config.lock().await=config;
  st.broadcast_all(&json!({"type":"workspace-changed"}));
  Ok(())
@@ -144,7 +159,7 @@ pub async fn files(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::
 pub async fn action(State(st):State<Arc<crate::AppState>>,Json(body):Json<Value>)->Response{result(call(&st,body["name"].as_str().unwrap_or(""),&body["arguments"]).await)}
 pub async fn pick(State(st):State<Arc<crate::AppState>>)->Response{
  let picker=st.folder_picker.read().unwrap().clone();
- match picker{Some(picker)=>match picker(){Ok(path)=>Json(json!({"directory":path})).into_response(),Err(e)=>result(Err(e))},None=>result(Err("请输入本机目录完整路径".into()))}
+ match picker{Some(picker)=>match blocking(move||picker()).await{Ok(path)=>Json(json!({"directory":path})).into_response(),Err(e)=>result(Err(e))},None=>result(Err("请输入本机目录完整路径".into()))}
 }
 pub async fn download(State(st):State<Arc<crate::AppState>>,Query(args):Query<std::collections::HashMap<String,String>>)->Response{
  let root=match st.workspace.root().await{Ok(root)=>root,Err(e)=>return result(Err(e))};
@@ -187,5 +202,17 @@ pub async fn upload(State(st):State<Arc<crate::AppState>>,Query(args):Query<std:
 }
 #[cfg(test)]mod tests{
  use super::*;
+ #[tokio::test(flavor="current_thread")]
+ async fn permission_work_keeps_configuration_reads_responsive(){
+  let hub=Arc::new(WorkspaceHub::new());let worker_hub=hub.clone();let entered=Arc::new(std::sync::atomic::AtomicBool::new(false));let worker_entered=entered.clone();
+  let task=tokio::spawn(async move{
+   let permit=worker_hub.mutation.clone().lock_owned().await;
+   blocking(move||{let _permit=permit;worker_entered.store(true,std::sync::atomic::Ordering::SeqCst);std::thread::sleep(std::time::Duration::from_millis(200));Ok(())}).await
+  });
+  while !entered.load(std::sync::atomic::Ordering::SeqCst){tokio::task::yield_now().await;}
+  assert!(hub.mutation.clone().try_lock_owned().is_err());
+  let snapshot=tokio::time::timeout(std::time::Duration::from_millis(50),hub.snapshot()).await.unwrap();assert_eq!(snapshot["enabled"],false);
+  task.await.unwrap().unwrap();assert!(hub.mutation.clone().try_lock_owned().is_ok());
+ }
  #[test]fn paths_cannot_escape(){let dir=std::env::temp_dir().join(format!("sp-ws-{}",uuid::Uuid::new_v4()));std::fs::create_dir(&dir).unwrap();let root=canonical(&dir).unwrap();assert!(resolve(&root,"../secret",true).is_err());assert!(resolve(&root,"C:/secret",true).is_err());assert!(resolve(&root,"item.txt",true).is_ok());std::fs::remove_dir(dir).unwrap();}
 }

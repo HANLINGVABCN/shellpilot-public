@@ -21,6 +21,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: cargo build --manifest-path server-rs/Cargo.toml
+      - run: cargo test --manifest-path server-rs/Cargo.toml --lib workspace
       - run: node scripts/verify-workspace-windows.mjs
   windows-reading:
     runs-on: windows-latest

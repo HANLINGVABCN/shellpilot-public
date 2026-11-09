@@ -113,6 +113,12 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn OpenProcessToken(process:Handle,access:u32,token:*mut Handle)->i32;
   fn GetTokenInformation(token:Handle,class:u32,buffer:*mut c_void,length:u32,needed:*mut u32)->i32;
   fn EqualSid(first:Sid,second:Sid)->i32;
+  fn GetKernelObjectSecurity(handle:Handle,information:u32,descriptor:*mut c_void,length:u32,needed:*mut u32)->i32;
+  fn GetSecurityDescriptorDacl(descriptor:*const c_void,present:*mut i32,acl:*mut *mut c_void,defaulted:*mut i32)->i32;
+  fn SetEntriesInAclW(count:u32,entries:*const ExplicitAccess,old_acl:*const c_void,new_acl:*mut *mut c_void)->u32;
+  fn InitializeSecurityDescriptor(descriptor:*mut SecurityDescriptor,revision:u32)->i32;
+  fn SetSecurityDescriptorDacl(descriptor:*mut SecurityDescriptor,present:i32,acl:*mut c_void,defaulted:i32)->i32;
+  fn SetKernelObjectSecurity(handle:Handle,information:u32,descriptor:*const SecurityDescriptor)->i32;
  }
  #[link(name="kernel32")]extern "system"{fn LocalFree(value:*mut c_void)->*mut c_void;}
  fn wide(s:&std::ffi::OsStr)->Vec<u16>{s.encode_wide().chain(Some(0)).collect()}
@@ -138,27 +144,78 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   let mut length=0;unsafe{while *string.add(length)!=0{length+=1;}}
   let s=unsafe{String::from_utf16_lossy(std::slice::from_raw_parts(string,length))};unsafe{LocalFree(string.cast());}Ok(s)
  }
+ #[repr(C)]struct Trustee{multiple:*mut c_void,operation:i32,form:i32,kind:i32,name:*mut u16}
+ #[repr(C)]struct ExplicitAccess{permissions:u32,mode:i32,inheritance:u32,trustee:Trustee}
+ #[repr(C)]struct SecurityDescriptor{revision:u8,reserved:u8,control:u16,owner:Sid,group:Sid,sacl:*mut c_void,dacl:*mut c_void}
+ // Set only this directory handle's ACL. Path-based ACL tools propagate changes
+ // through the profile tree even for a non-inheriting ACE, which can take minutes.
+ fn ancestor_access(path:&Path,sid:Sid,grant:bool)->Result<(),String>{
+  let raw=unsafe{CreateFileW(wide(path.as_os_str()).as_ptr(),0x00020000|0x00040000,1|2|4,null(),3,0x02000000|0x00200000,0)};
+  if raw==-1{return Err(error("工作区上级目录权限不可修改"));}
+  let handle=HandleGuard(raw);let mut info:FileInfo=unsafe{zeroed()};
+  checked(unsafe{GetFileInformationByHandle(handle.0,&mut info)},"上级目录检查失败")?;
+  if info.attributes&0x400!=0||info.attributes&0x10==0{return Err("工作区上级目录不能是链接".into());}
+  let mut length=0;unsafe{GetKernelObjectSecurity(handle.0,4,null_mut(),0,&mut length);}
+  if length==0{return Err(error("上级目录权限读取失败"));}
+  let mut old=vec![0usize;(length as usize+size_of::<usize>()-1)/size_of::<usize>()];
+  checked(unsafe{GetKernelObjectSecurity(handle.0,4,old.as_mut_ptr().cast(),length,&mut length)},"上级目录权限读取失败")?;
+  let(mut present,mut defaulted)=(0,0);let mut acl=null_mut();
+  checked(unsafe{GetSecurityDescriptorDacl(old.as_ptr().cast(),&mut present,&mut acl,&mut defaulted)},"上级目录权限解析失败")?;
+  if present==0||acl.is_null(){return Err("上级目录没有可保留的权限列表，请选择其他目录".into());}
+  let entry=ExplicitAccess{permissions:0x001200a9,mode:if grant{2}else{4},inheritance:0,trustee:Trustee{multiple:null_mut(),operation:0,form:0,kind:1,name:sid.cast()}};
+  let mut new_acl=null_mut();let code=unsafe{SetEntriesInAclW(1,&entry,acl,&mut new_acl)};
+  if code!=0{return Err(format!("上级目录通行权限更新失败：{}",std::io::Error::from_raw_os_error(code as i32)));}
+  let mut descriptor:SecurityDescriptor=unsafe{zeroed()};
+  let result=(||{
+   checked(unsafe{InitializeSecurityDescriptor(&mut descriptor,1)},"目录权限初始化失败")?;
+   checked(unsafe{SetSecurityDescriptorDacl(&mut descriptor,1,new_acl,0)},"目录权限合并失败")?;
+   checked(unsafe{SetKernelObjectSecurity(handle.0,4,&descriptor)},"目录通行权限保存失败")
+  })();
+  unsafe{LocalFree(new_acl);}result
+ }
+ fn run_permission_helper(mut command:std::process::Command,timeout:std::time::Duration)->Result<(),String>{
+  use std::process::Stdio;
+  let mut child=command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).creation_flags(0x08000000).spawn().map_err(|e|e.to_string())?;
+  let started=std::time::Instant::now();
+  loop{
+   match child.try_wait(){
+    Ok(Some(status))=>return if status.success(){Ok(())}else{Err("工作区权限设置失败，请选择你能修改权限的文件夹".into())},
+    Ok(None)=>{},
+    Err(error)=>{let _=child.kill();let _=child.wait();return Err(error.to_string());}
+   }
+   if started.elapsed()>=timeout{let _=child.kill();let _=child.wait();return Err("工作区权限设置超时，未完成启用；请重新检查目录后保存".into());}
+   std::thread::sleep(std::time::Duration::from_millis(20));
+  }
+ }
+ fn permissions(root:&Path,args:&[String])->Result<(),String>{
+  let exe=PathBuf::from(std::env::var_os("SystemRoot").ok_or("Windows系统目录不可用")?).join("System32/icacls.exe");
+  let mut command=std::process::Command::new(exe);command.arg(root).args(args).arg("/Q");
+  run_permission_helper(command,std::time::Duration::from_secs(10))
+ }
+ #[cfg(test)]#[test]fn slow_permission_helper_is_terminated(){
+  let exe=PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+  let mut command=std::process::Command::new(exe);command.args(["-NoProfile","-NonInteractive","-Command","Start-Sleep -Seconds 20"]);
+  let started=std::time::Instant::now();let result=run_permission_helper(command,std::time::Duration::from_millis(250));
+  assert!(result.unwrap_err().contains("超时"));assert!(started.elapsed()<std::time::Duration::from_secs(3));
+ }
  pub fn prepare(root:&Path)->Result<(),String>{
   let sid=profile(root)?;let id=sid_string(sid.0)?;
   let key=root.to_string_lossy().to_string();
   let mut journal=crate::load_json_or("workspace-acl.json",json!({}));
   if journal.get(&key).is_none(){journal[&key]=json!({"label":integrity(root)?});crate::save_json("workspace-acl.json",&journal);}
   // Add only this AppContainer's inheritable Modify ACL, preserving other ACLs.
-  let out=std::process::Command::new("icacls.exe").arg(root).arg("/grant").arg(format!("*{id}:(OI)(CI)M")).arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
-  if !out.status.success(){return Err("无法授予沙箱工作区权限，请选择你能修改权限的文件夹".into());}
+  permissions(root,&["/grant".into(),format!("*{id}:(OI)(CI)M")])?;
   for path in ancestor_paths(root){
-   let _=std::process::Command::new("icacls.exe").arg(path).arg("/grant").arg(format!("*{id}:(RX)")).arg("/Q").creation_flags(0x08000000).output();
+   ancestor_access(&path,sid.0,true)?;
   }
-  let low=std::process::Command::new("icacls.exe").arg(root).arg("/setintegritylevel").arg("(OI)(CI)L").arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
-  if !low.status.success(){return Err("无法设置工作区的隔离运行权限".into());}
+  permissions(root,&["/setintegritylevel".into(),"(OI)(CI)L".into()])?;
   journal[&key]["managedLabel"]=json!(integrity(root)?);crate::save_json("workspace-acl.json",&journal);
   std::fs::create_dir_all(root.join(".shellpilot")).map_err(|e|e.to_string())?;Ok(())
  }
  pub fn release(root:&Path)->Result<(),String>{
   let sid=profile(root)?;let id=sid_string(sid.0)?;
-  let out=std::process::Command::new("icacls.exe").arg(root).arg("/remove:g").arg(format!("*{id}")).arg("/Q").creation_flags(0x08000000).output().map_err(|e|e.to_string())?;
-  if !out.status.success(){return Err("工作区沙箱权限清理失败".into());}
-  for path in ancestor_paths(root){let _=std::process::Command::new("icacls.exe").arg(path).arg("/remove:g").arg(format!("*{id}")).arg("/Q").creation_flags(0x08000000).output();}
+  permissions(root,&["/remove:g".into(),format!("*{id}")])?;
+  for path in ancestor_paths(root){ancestor_access(&path,sid.0,false)?;}
   let mut journal=crate::load_json_or("workspace-acl.json",json!({}));let key=root.to_string_lossy().to_string();
   if let Some(label)=journal[&key]["label"].as_str(){if journal[&key]["managedLabel"].as_str().is_none_or(|managed|integrity(root).as_deref()==Ok(managed)){restore_integrity(root,label)?;}}
   if let Some(object)=journal.as_object_mut(){object.remove(&key);}crate::save_json("workspace-acl.json",&journal);

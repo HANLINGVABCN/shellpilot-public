@@ -63,9 +63,10 @@ export default function SettingsView() {
   const [selHosts, setSelHosts] = useState(new Set());
   const [selProviders, setSelProviders] = useState(new Set());
   const [importMode, setImportMode] = useState('merge');
+  const loadSettings=()=>api('/settings','GET',undefined,{timeoutMs:10000}).then(value=>{setS(value);setErr('');}).catch(e=>setErr(e.message));
 
   useEffect(() => {
-    api('/settings').then(setS).catch((e) => setErr(e.message));
+    loadSettings();
     api('/mcp/config').then(setMcpConfig).catch(() => {});
     api('/hosts').then(setMcpHosts).catch(() => {});
     const refreshKeys = () => api('/ssh/host-keys').then(setHostKeys).catch(() => {});
@@ -97,7 +98,7 @@ export default function SettingsView() {
     }
   };
 
-  if (err && !s) return <div className="settings"><div className="form-err">⚠️ {err}</div></div>;
+  if (err && !s) return <div className="settings"><div className="form-err">{err}</div><button className="btn" onClick={()=>{setErr('');loadSettings();}}>重新加载配置</button></div>;
   if (!s) return <div className="settings"><div className="empty-center">加载中…</div></div>;
 
   const providerName = (id) => s.providers.find((p) => p.id === id)?.name || '（服务商已删除）';

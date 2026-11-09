@@ -676,6 +676,8 @@ textarea { resize: vertical; line-height: 1.6; }
 .workspace-editor textarea { height:140px; margin-top:6px; font-family:var(--mono); }
 .workspace-directory { display:flex; align-items:center; gap:8px; }
 .workspace-directory>input { flex:1; min-width:0; }
+.workspace-saving { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; line-height:1.6; margin:8px 0; }
+.workspace-saving .spinner-dot { flex-shrink:0; }
 .memory-note { font-size:11px; color:var(--accent); padding:5px 12px; }
 .chat-delete-confirm { margin:6px; padding:9px; border:1px solid var(--red); border-radius:var(--radius); background:var(--panel2); }
 .chat-delete-confirm p { font-size:12px; color:var(--text); overflow-wrap:anywhere; }

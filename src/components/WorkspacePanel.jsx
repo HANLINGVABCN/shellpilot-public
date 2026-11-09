@@ -3,16 +3,18 @@ import {api} from '../api.js';
 import {ws} from '../ws.js';
 export const workspaceSupported=()=>/Windows/i.test(navigator.userAgent);
 export function WorkspaceSettings(){
- const [config,setConfig]=useState({directory:'',enabled:false,network:false}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[loaded,setLoaded]=useState(false);
- const load=()=>api('/workspace').then(value=>{setConfig(value);setLoaded(true);}).catch(e=>setError(e.message));
+ const [config,setConfig]=useState({directory:'',enabled:false,network:false}),[busy,setBusy]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[loaded,setLoaded]=useState(false);
+ const load=()=>api('/workspace','GET',undefined,{timeoutMs:10000}).then(value=>{setConfig(value);setLoaded(true);setError('');}).catch(e=>setError(e.message));
  useEffect(()=>{if(workspaceSupported())load();return ws.on('workspace-changed',()=>{if(workspaceSupported())load();});},[]);
  if(!workspaceSupported())return null;
  const act=async fn=>{setBusy(true);setError('');try{await fn();}catch(e){setError(e.message);}finally{setBusy(false);}};
+ const save=async()=>{setSaving(true);try{await act(async()=>{await api('/workspace','PUT',config,{timeoutMs:60000});await load();});}finally{setSaving(false);}};
  return <><div className="sec-title">本机 AI 工作区</div><div className="card workspace-settings">
-  <div className="workspace-directory"><input aria-label="工作区目录" disabled={!loaded} placeholder="选择一个专门的文件夹" value={config.directory} onChange={e=>setConfig({...config,directory:e.target.value})}/><button className="btn" disabled={busy||!loaded} onClick={()=>act(async()=>{const value=await api('/workspace/pick','POST',{});if(value.directory)setConfig({...config,directory:value.directory});})}>选择目录</button></div>
-  <div className="memory-controls"><label className="memory-auto"><input type="checkbox" checked={config.enabled} onChange={e=>setConfig({...config,enabled:e.target.checked})}/>启用工作区</label><label className="memory-auto"><input type="checkbox" checked={config.network} onChange={e=>setConfig({...config,network:e.target.checked})}/>允许工作区联网</label><button className="btn primary" disabled={busy||!config.directory.trim()} onClick={()=>act(async()=>{await api('/workspace','PUT',config);await load();})}>保存工作区</button></div>
+  <div className="workspace-directory"><input aria-label="工作区目录" disabled={busy||!loaded} placeholder="选择一个专门的文件夹" value={config.directory} onChange={e=>setConfig({...config,directory:e.target.value})}/><button className="btn" disabled={busy||!loaded} onClick={()=>act(async()=>{const value=await api('/workspace/pick','POST',{});if(value.directory)setConfig({...config,directory:value.directory});})}>选择目录</button></div>
+  <div className="memory-controls"><label className="memory-auto"><input type="checkbox" disabled={busy||!loaded} checked={config.enabled} onChange={e=>setConfig({...config,enabled:e.target.checked})}/>启用工作区</label><label className="memory-auto"><input type="checkbox" disabled={busy||!loaded} checked={config.network} onChange={e=>setConfig({...config,network:e.target.checked})}/>允许工作区联网</label><button className="btn primary" aria-busy={saving} disabled={busy||!loaded||!config.directory.trim()} onClick={save}>{saving?'保存中…':'保存工作区'}</button></div>
+  {saving&&<p className="workspace-saving" role="status"><span className="spinner-dot" aria-hidden="true"/>正在保存中，权限设置可能耗时较长，请稍候</p>}
   <p className="memory-help">AI 在这个目录读写文件和运行命令。Windows AppContainer 限制工作区外的用户文件，程序安装和系统目录不授予写权限。</p>
-  {error&&<p className="form-err" role="alert">{error}</p>}
+  {error&&<p className="form-err" role="alert">{error}{!loaded&&<button className="btn btn-sm" onClick={load}>重新读取工作区</button>}</p>}
  </div></>;
 }
 export default function WorkspacePanel({onClose,onSettings}){
