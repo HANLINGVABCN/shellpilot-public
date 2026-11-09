@@ -111,7 +111,9 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
  let _operation=st.workspace.mutation.lock().await;
  #[cfg(target_os="android")]{
   let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("工作区已关闭".into());}
-  let result=android::action(name,args,config.network).await;st.workspace.linux.touch();return result;
+  let result=android::action(name,args,config.network).await;st.workspace.linux.touch();
+  if name=="workspace_read"{if let Ok(value)=&result{let text=value["content"].as_str().unwrap_or("");if text.contains('\0')||value["sha256"].as_str()!=Some(crate::operations::hash(text).as_str()){return Err("这个文件不能按UTF-8文本编辑，请下载或通过工作区程序处理，原文件已保留".into());}}}
+  return result;
  }
  let root=st.workspace.root().await?;
  let relative=args["path"].as_str().unwrap_or("");
