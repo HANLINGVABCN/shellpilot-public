@@ -682,7 +682,7 @@ textarea { resize: vertical; line-height: 1.6; }
 .workspace-page-settings { flex:0 0 auto; }
 .workspace-page .workspace-files { flex:1 0 160px; }
 .workspace-terminal { flex:0 0 290px; min-height:290px; margin:10px 0; }
-.workspace-terminal-body { height:260px; margin-top:8px; background:#0a0d13; }
+.workspace-terminal-body { height:calc(260px * var(--sp-ui-zoom,1)); zoom:calc(1 / var(--sp-ui-zoom,1)); margin-top:8px; background:#0a0d13; }
 .workspace-engine { display:flex; align-items:center; gap:8px; margin:10px 0; font-size:12px; }
 .workspace-engine select { width:auto; }
 .linux-progress { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px; }
