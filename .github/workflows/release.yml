@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261109-workspace-tabs'
+        default: 'build-20261109-backup-options'
       title:
         description: 'Release title'
         required: true
@@ -80,22 +80,21 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：重整工作区文件管理、小标签与独立终端。
+          ShellPilot：服务器、AI提供商、对话记录和记忆独立备份。
 
-          - 工作区以文件管理为主，使用与服务器文件管理一致的路径栏、工具栏和文件列表；文件区占满页面。
-          - 支持文件管理、终端与配置三类小标签，固定长度和关闭位置，支持固定、排序与刷新恢复。配置小标签唯一复用。
-          - 文件管理的配置按钮放在工具栏；终端的配置按钮固定在小标签栏右侧，与「＋」并排。点击终端或右键文件夹，可以新开对应目录的独立终端。
-          - 上传文件夹或拖拽保留子目录，拖拽支持空目录；同名文件明确报错，不覆盖。安卓使用系统目录选择器逐个导入文件。
-          - 文件支持复制、剪切、粘贴、重命名、编辑和删除。多个终端各自拥有输入输出和目录，关闭一个不会关闭其他会话。
-          - 工作区统一使用内置Alpine Linux，旧PowerShell配置保留原目录和文件并转换运行方式。Windows未安装Linux仍能管理工作区文件，执行命令和终端需要安装。
-          - 不自动下载Linux；安卓运行组件沿用固定签名和包名，仅更新服务层并复用原生二进制。Windows继续复用原QEMU与基础磁盘。
-          - 应用数据目录、已有主机、聊天、记忆与任务队列保留，外部MCP工具范围保持现有设置。
+          - 导出增加选择弹窗，支持服务器、AI提供商、对话记录、记忆四类，并提供全选／取消全选。
+          - 导入先检测文件并显示各类数量，再弹出选择；缺少的类别置灰不可选，全选仅选择文件中存在的数据。
+          - 导入初始不勾选，服务器和AI提供商还可继续逐项挑选。对话、记忆可以单独导入，不再自动跟随其他类别。
+          - 合并保留现有内容；覆盖仅替换勾选的类别，未勾选的服务器、AI配置、对话及记忆文件不写入。
+          - 单独导出对话不附带服务器密码、私钥或AI API Key；导入时按服务器身份匹配，未匹配的历史保留到全局对话，不自动添加服务器。
+          - 记忆保留各自的启停状态，AI提供商导入保留本机MCP及自动记忆开关。
+          - 继续使用现有加密.spex格式，兼容旧备份，保留应用数据目录和永久安卓签名。
 
-          使用方法见 [工作区说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。全部构建与运行检查在GitHub进行，本机不下载构建依赖。
+          文件管理、终端、工作区小标签、AI及MCP等功能继续保留。全部构建和测试在GitHub完成。
 
-          Windows安装使用ShellPilot-Windows-Setup.exe；便携更新使用shellpilot-app.exe；安卓主应用使用ShellPilot-arm64.apk。Linux运行环境仍由用户在工作区配置标签点击安装。
+          Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。
 
-          发布直接复制通过检查的构建文件，不重复编译或重新签名。
+          发布直接复制通过检查的安装包，不重复编译或重新签名。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release

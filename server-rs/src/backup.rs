@@ -19,6 +19,7 @@ pub fn counts(data:&Value)->Result<Value,String>{
 }
 fn host_metadata(host:&Value)->Value{let mut result=Map::new();for key in ["id","name","host","port","username"]{if let Some(value)=host.get(key){result.insert(key.into(),value.clone());}}Value::Object(result)}
 pub fn export_selected(data:&Value,sections:Sections)->Result<Value,String>{
+ if !sections.any(){return Err("请至少选择一项内容".into());}
  sections.check(&counts(data)?)?;
  let mut result=json!({"version":1,"exportedAt":data["exportedAt"],"sections":sections});
  if sections.hosts{result["hosts"]=data["hosts"].clone();}
@@ -87,4 +88,9 @@ pub fn prepare_selected(current:&Value,incoming:&Value,sections:Sections,options
  }
  #[test]fn chat_only_import_works_without_creating_hosts_and_is_repeatable(){let exported=export_selected(&fixture(),Sections{chats:true,..Default::default()}).unwrap();let current=json!({"hosts":[],"settings":{},"chats":{}});let sections=Sections{chats:true,..Default::default()};let first=prepare_selected(&current,&exported,sections,options("merge")).unwrap();assert_eq!(first["hosts"],json!([]));assert_eq!(first["chats"][GLOBAL_KEY].as_array().unwrap().len(),1);let repeated=prepare_selected(&first,&exported,sections,options("merge")).unwrap();assert_eq!(first["chats"],repeated["chats"]);}
  #[test]fn absent_categories_and_invalid_flags_cannot_be_selected(){assert!(Sections::parse(&json!({})).is_err());assert!(Sections::parse(&json!({"hosts":"yes"})).is_err());assert!(Sections::parse(&json!({"other":true})).is_err());assert!(export_selected(&json!({}),Sections::all()).is_err());assert_eq!(counts(&json!({"memories":[{"content":"one"}]})).unwrap(),json!({"hosts":0,"providers":0,"chats":0,"memories":1}));}
+ #[test]fn chat_source_identity_prevents_attaching_to_a_different_server_with_the_same_id(){
+  let incoming=fixture();let mut current=fixture();current["hosts"][0]["host"]=json!("192.0.2.99");let original=current["chats"]["h"].clone();
+  let exported=export_selected(&incoming,Sections{chats:true,..Default::default()}).unwrap();let result=prepare_selected(&current,&exported,Sections{chats:true,..Default::default()},options("merge")).unwrap();
+  assert_eq!(result["chats"]["h"],original);assert_eq!(result["chats"][GLOBAL_KEY].as_array().unwrap().len(),1);assert_eq!(result["hosts"],current["hosts"]);
+ }
 }

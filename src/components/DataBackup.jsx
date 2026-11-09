@@ -29,7 +29,7 @@ export default function DataBackup({onImported}){
     setPreview({...value,kind:'import',data,password,fileName:file.name});setSections(empty());setMode('merge');
     setHostIds(new Set(value.hosts.map(host=>host.id)));setProviderIds(new Set(value.providers.map(provider=>provider.id)));
   });
-  const allSelected=preview&&categories.every(([key])=>!preview.counts[key]||sections[key])
+  const allSelected=preview&&categories.some(([key])=>preview.counts[key]>0)&&categories.every(([key])=>!preview.counts[key]||sections[key])
     &&(!sections.hosts||preview.kind==='export'||hostIds.size===preview.hosts.length)
     &&(!sections.providers||preview.kind==='export'||providerIds.size===preview.providers.length);
   const selectAll=()=>{

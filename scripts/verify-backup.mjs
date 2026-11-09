@@ -13,7 +13,7 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'sp-backup-'));
 try{for(const mode of ['merge','overwrite'])for(const key of keys){
  const directory=path.join(root,mode+'-'+key);fs.mkdirSync(directory);const current=fixture('old');
  for(const [name,value]of [['hosts',current.hosts],['settings',current.settings],['chats',current.chats],['memories',current.memories]])fs.writeFileSync(path.join(directory,name+'.json'),JSON.stringify(value));
- const server=spawn(path.resolve('server-rs/target/debug/shellpilot-server'),[],{env:{...process.env,SHELLPILOT_DATA:directory,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
+ const server=spawn(path.resolve('server-rs/target/debug/shellpilot-server'+(process.platform==='win32'?'.exe':'')),[],{env:{...process.env,SHELLPILOT_DATA:directory,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
  try{
   const base=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Backend timeout')),15000);server.stdout.on('data',data=>{const match=data.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);resolve(match[0]);}});});
   const call=async(route,body,ok=true)=>{const response=await fetch(base+'/api'+route,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const value=await response.json();assert.equal(response.ok,ok,JSON.stringify(value));return value;};
