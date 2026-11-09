@@ -14,7 +14,7 @@ struct Guest{expected:String}
 }
 async fn connect(vm:&Vm)->Result<client::Handle<Guest>,String>{
  let config=Arc::new(client::Config{inactivity_timeout:Some(Duration::from_secs(900)),..Default::default()});
- let hostkey=tokio::fs::read_to_string(super::linux_runtime::base().join("windows-guest/hostkey.pub")).await.map_err(|e|e.to_string())?;
+ let hostkey=tokio::fs::read_to_string(vm.root.join(".shellpilot/linux-hostkey.pub")).await.map_err(|e|e.to_string())?;
  let expected=hostkey.split_whitespace().nth(1).ok_or("Linux环境身份记录无效")?.to_string();
  let mut handle=tokio::time::timeout(Duration::from_secs(5),client::connect(config,("127.0.0.1",vm.port),Guest{expected})).await.map_err(|_|"Linux环境连接超时")?.map_err(|e|e.to_string())?;
  if !handle.authenticate_publickey("root",vm.key.clone()).await.map_err(|e|e.to_string())?{return Err("Linux环境认证失败".into());}Ok(handle)
@@ -25,7 +25,7 @@ async fn launch(root:&Path,network:bool)->Result<Vm,String>{
  let key=Arc::new(russh::keys::key::KeyPair::generate_ed25519());
  let public=key.clone_public_key().map_err(|e|e.to_string())?;let key_b64=STANDARD.encode(format!("ssh-ed25519 {}",public.public_key_base64()));
  let internal=root.join(".shellpilot");tokio::fs::create_dir_all(&internal).await.map_err(|e|e.to_string())?;
- let disk=internal.join("linux-disk.qcow2");if !tokio::fs::try_exists(&disk).await.unwrap_or(false){tokio::fs::copy(guest.join("base.qcow2"),&disk).await.map_err(|e|e.to_string())?;}
+ let disk=internal.join("linux-disk.qcow2");if !tokio::fs::try_exists(&disk).await.unwrap_or(false){tokio::fs::copy(guest.join("base.qcow2"),&disk).await.map_err(|e|e.to_string())?;tokio::fs::copy(guest.join("hostkey.pub"),internal.join("linux-hostkey.pub")).await.map_err(|e|e.to_string())?;}
  let probe=std::net::TcpListener::bind(("127.0.0.1",0)).map_err(|e|e.to_string())?;let port=probe.local_addr().map_err(|e|e.to_string())?.port();drop(probe);
  let proxy=if network{Some(super::linux_proxy::start().await?)}else{None};
  let diagnostics=std::fs::File::create(internal.join("linux-runtime.log")).map_err(|e|e.to_string())?;
@@ -86,16 +86,18 @@ fn pack(root:&Path,path:&Path)->Result<std::collections::HashMap<PathBuf,String>
 }
 fn unpack_outputs(root:&Path,path:&Path,baseline:&std::collections::HashMap<PathBuf,String>)->Result<(),String>{
  let _root_lease=super::windows::hold_directory(root,root)?;
- let mut archive=tar::Archive::new(std::fs::File::open(path).map_err(|e|e.to_string())?);let mut total=0u64;
+ let mut archive=tar::Archive::new(std::fs::File::open(path).map_err(|e|e.to_string())?);let mut total=0u64;let mut seen=std::collections::HashSet::new();
  for entry in archive.entries().map_err(|e|e.to_string())?{let mut entry=entry.map_err(|e|e.to_string())?;let raw=entry.path().map_err(|e|e.to_string())?.into_owned();let relative=raw.components().filter(|part|!matches!(part,std::path::Component::CurDir)).collect::<PathBuf>();let text=relative.to_string_lossy();let target=super::resolve(root,&text,true)?;
-  let kind=entry.header().entry_type();if !kind.is_file()&&!kind.is_dir(){return Err("Linux输出含链接或设备文件，已拒绝同步到电脑".into());}
+  let kind=entry.header().entry_type();if !kind.is_file()&&!kind.is_dir(){return Err("Linux输出含链接或设备文件，已拒绝同步到电脑".into());}if kind.is_file(){seen.insert(relative.clone());}
   total+=entry.size();if total>1024*1024*1024{return Err("Linux输出超过1GB，请分批导出".into());}
   if kind.is_dir(){if target!=root&&!target.exists(){let _lease=super::windows::hold_directory(root,target.parent().ok_or("目录无效")?)?;std::fs::create_dir(&target).map_err(|e|e.to_string())?;}continue;}
   let parent=target.parent().ok_or("文件路径无效")?;std::fs::create_dir_all(parent).map_err(|e|e.to_string())?;let _lease=super::windows::hold_directory(root,parent)?;
   if target.exists(){use std::io::Read;let mut file=super::windows::read_file(&target)?;let mut hash=sha2::Sha256::new();use sha2::Digest;let mut bytes=[0u8;65536];loop{let n=file.read(&mut bytes).map_err(|e|e.to_string())?;if n==0{break;}hash.update(&bytes[..n]);}let current=format!("{:x}",hash.finalize());if baseline.get(&relative).is_none_or(|old|*old!=current){return Err(format!("本机文件 {} 在命令执行期间已变化，原文件保留，Linux产出仍在工作区环境中",text));}}
   let temp=parent.join(format!(".linux-output-{}",uuid::Uuid::new_v4().simple()));let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temp).map_err(|e|e.to_string())?;
   if let Err(error)=std::io::copy(&mut entry,&mut file){drop(file);let _=std::fs::remove_file(&temp);return Err(error.to_string());}file.sync_all().map_err(|e|e.to_string())?;drop(file);std::fs::rename(&temp,&target).map_err(|e|e.to_string())?;
- }Ok(())
+ }
+ for(relative,expected)in baseline{if !seen.contains(relative){let target=super::resolve(root,&relative.to_string_lossy(),false)?;let _lease=super::windows::hold_directory(root,target.parent().ok_or("文件路径无效")?)?;let mut file=super::windows::read_file(&target)?;use std::io::Read;use sha2::Digest;let mut hash=sha2::Sha256::new();let mut buffer=[0u8;65536];loop{let n=file.read(&mut buffer).map_err(|e|e.to_string())?;if n==0{break;}hash.update(&buffer[..n]);}if format!("{:x}",hash.finalize())!=*expected{return Err(format!("文件 {} 已被你修改，未同步Linux删除操作",relative.display()));}drop(file);std::fs::remove_file(target).map_err(|e|e.to_string())?;}}
+ Ok(())
 }
 pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:bool,timeout:u64)->Result<Value,String>{
  if st.workspace.linux.terminals.load(std::sync::atomic::Ordering::SeqCst)>0{return Err("工作区终端正在使用，请先关闭终端再让AI同步执行".into());}

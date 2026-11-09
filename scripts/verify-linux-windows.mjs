@@ -15,12 +15,12 @@ try{
  await api('/workspace','PUT',{directory:root,enabled:true,network:false,engine:'linux'});
  assert.equal((await api('/workspace/linux')).running,false,'Opening app must not boot Linux by default');
  fs.writeFileSync(path.join(root,'input.txt'),'original input');
- const task=await api('/workspace/action','POST',{name:'workspace_exec',arguments:{command:'cat input.txt; printf generated > answer.txt; cat /etc/alpine-release',timeout:60000}});
+ const task=await api('/workspace/action','POST',{name:'workspace_exec',arguments:{command:'cat input.txt; printf generated > answer.txt; printf persistent >/root/environment-marker; cat /etc/alpine-release',timeout:60000}});
  assert.equal(task.exitCode,0,JSON.stringify(task));assert(task.stdout.includes('original input'));assert(task.stdout.includes('3.24.4'));assert.equal(fs.readFileSync(path.join(root,'answer.txt'),'utf8'),'generated');
  assert.equal((await api('/workspace/linux')).running,true);
  const disk=path.join(root,'.shellpilot','linux-disk.qcow2');assert(fs.existsSync(disk));
  await api('/workspace/linux/stop','POST',{});assert.equal((await api('/workspace/linux')).running,false);
- const restart=await api('/workspace/action','POST',{name:'workspace_exec',arguments:{command:'test -f answer.txt; printf restored',timeout:60000}});assert.equal(restart.exitCode,0);
+ const restart=await api('/workspace/action','POST',{name:'workspace_exec',arguments:{command:'test -f answer.txt; cat /root/environment-marker; rm input.txt; printf restored',timeout:60000}});assert.equal(restart.exitCode,0);assert(restart.stdout.includes('persistent'));assert(!fs.existsSync(path.join(root,'input.txt')));
  const socket=new WebSocket(base.replace('http:','ws:')+'/api/workspace/terminal/ws');
  let terminalText='';const terminalReady=new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(Error('Terminal timeout')),100000);socket.addEventListener('message',async event=>{terminalText+=typeof event.data==='string'?event.data:await event.data.text();if(terminalText.includes('manual-terminal-ok')){clearTimeout(t);resolve();}});socket.addEventListener('open',()=>socket.send("printf 'manual-terminal-ok\\n'\r"));});
  await terminalReady;socket.close();await new Promise(resolve=>setTimeout(resolve,1200));

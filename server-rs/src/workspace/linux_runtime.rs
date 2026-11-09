@@ -43,7 +43,7 @@ pub async fn start(st:&Arc<crate::AppState>)->Result<Value,String>{
  st.workspace.linux.cancel.send_replace(false);
  let task=st.clone();tokio::spawn(async move{
   let result=install(&task,m,keys).await;
-  if let Err(error)=result{update(&task,if *task.workspace.linux.cancel.borrow(){"paused"}else{"failed"},"",0,0,Some(error)).await;}
+  if let Err(error)=result{let previous=task.workspace.linux.install.lock().await.clone();update(&task,if *task.workspace.linux.cancel.borrow(){"paused"}else{"failed"},&previous.package,previous.received,previous.total,Some(error)).await;}
   task.workspace.linux.installing.store(false,Ordering::SeqCst);
  });
  Ok(json!({"started":true}))
@@ -72,6 +72,7 @@ async fn download(st:&Arc<crate::AppState>,key:&str,package:&Package)->Result<Pa
  if tokio::fs::try_exists(&target).await.unwrap_or(false)&&verify(&target,&package.sha256).await?{return Ok(target);}
  let client=reqwest::Client::builder().connect_timeout(Duration::from_secs(12)).timeout(Duration::from_secs(900)).build().map_err(|e|e.to_string())?;
  let mut last="下载源不可用".to_string();
+ let mut paused=st.workspace.linux.cancel.subscribe();
  for round in 0..3{
   for url in &package.urls{
    cancel(st)?;if !url.starts_with("https://"){return Err("运行组件必须通过HTTPS下载".into());}
@@ -82,14 +83,14 @@ async fn download(st:&Arc<crate::AppState>,key:&str,package:&Package)->Result<Pa
     tokio::fs::remove_file(&part).await.map_err(|e|e.to_string())?;offset=0;
    }
    let request=if offset>0{client.get(url).header(reqwest::header::RANGE,format!("bytes={offset}-"))}else{client.get(url)};
-   let response=match request.send().await{Ok(r)=>r,Err(e)=>{last=format!("下载失败：{e}");continue;}};
+   let response=match tokio::select!{result=request.send()=>result,_=paused.changed()=>return Err("安装已暂停，下次继续会复用已下载内容".into())}{Ok(r)=>r,Err(e)=>{last=format!("下载失败：{e}");continue;}};
    if !response.status().is_success(){last=format!("下载源返回HTTP {}",response.status());continue;}
    if response.status()==reqwest::StatusCode::PARTIAL_CONTENT{
     let expected=format!("bytes {offset}-");if !response.headers().get(reqwest::header::CONTENT_RANGE).and_then(|h|h.to_str().ok()).is_some_and(|h|h.starts_with(&expected)&&h.ends_with(&format!("/{}",package.bytes))){last="续传响应不匹配".into();continue;}
    }else{offset=0;}
    let mut file=tokio::fs::OpenOptions::new().create(true).write(true).append(offset>0).truncate(offset==0).open(&part).await.map_err(|e|e.to_string())?;
    let mut stream=response.bytes_stream();let mut received=offset;let mut tick=Instant::now()-Duration::from_secs(1);let mut failed=false;
-   while let Some(chunk)=stream.next().await{
+   while let Some(chunk)=tokio::select!{chunk=stream.next()=>chunk,_=paused.changed()=>{file.sync_all().await.map_err(|e|e.to_string())?;return Err("安装已暂停，下次继续会复用已下载内容".into());}}{
     cancel(st)?;let chunk=match chunk{Ok(c)=>c,Err(e)=>{last=format!("下载中断：{e}");failed=true;break;}};
     received+=chunk.len() as u64;if received>package.bytes{return Err("下载内容超过清单大小，已拒绝安装".into());}
     file.write_all(&chunk).await.map_err(|e|e.to_string())?;

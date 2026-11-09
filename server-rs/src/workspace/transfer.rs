@@ -15,6 +15,7 @@ pub async fn transfer(st:&Arc<crate::AppState>,name:&str,host:&str,args:&Value)-
   local=staging.clone();if upload{super::android::request(json!({"op":"export","path":relative,"localPath":local})).await?;}
  }
  #[cfg(not(target_os="android"))]{let root=st.workspace.root().await?;local=super::resolve(&root,relative,!upload)?;if !upload{staging=local.parent().ok_or("文件路径无效")?.join(format!(".workspace-transfer-{}",uuid::Uuid::new_v4().simple()));}}
+ #[cfg(not(target_os="android"))]let _lease={let root=st.workspace.root().await?;super::windows::hold_directory(&root,local.parent().ok_or("文件路径无效")?)?};
  let connection=crate::pool::conn_of(st,host).await.map_err(|e|e.to_string())?;
  let mut channel=crate::pool::open_channel(&connection).await.map_err(|e|e.to_string())?;
  let quoted=crate::util::shq(remote);let temp=format!("{remote}.shellpilot-{}",uuid::Uuid::new_v4().simple());let tempq=crate::util::shq(&temp);
