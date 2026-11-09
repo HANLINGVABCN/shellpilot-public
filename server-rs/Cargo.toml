@@ -34,6 +34,12 @@ sha2 = "0.10"
 base64 = "0.22"
 rand = "0.8"
 uuid = { version = "1", features = ["v4"] }
+flate2 = "1"
+tar = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk-context = "0.1"
 
 [profile.release]
 opt-level = 2

@@ -152,6 +152,7 @@ impl AppState {
 pub async fn bootstrap(st: &Arc<AppState>) {
     if let Err(error)=crate::validate_storage(){crate::store::report_storage_error(error);return;}
     st.workspace.load().await;
+    crate::workspace::linux_runtime::lifecycle(st);
     crate::jobs::restore(st).await;
     let hosts: Vec<Value> = load_json_or("hosts.json", serde_json::json!([]))
         .as_array()

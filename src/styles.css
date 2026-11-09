@@ -678,6 +678,16 @@ textarea { resize: vertical; line-height: 1.6; }
 .workspace-directory>input { flex:1; min-width:0; }
 .workspace-saving { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; line-height:1.6; margin:8px 0; }
 .workspace-saving .spinner-dot { flex-shrink:0; }
+.workspace-page { height:100%; max-height:none; overflow:auto; border:0; margin:0; padding:14px; display:flex; flex-direction:column; }
+.workspace-page-settings { flex:0 0 auto; }
+.workspace-page .workspace-files { flex:1 0 160px; }
+.workspace-terminal { flex:0 0 290px; min-height:290px; margin:10px 0; }
+.workspace-terminal-body { height:260px; margin-top:8px; background:#0a0d13; }
+.workspace-engine { display:flex; align-items:center; gap:8px; margin:10px 0; font-size:12px; }
+.workspace-engine select { width:auto; }
+.linux-progress { display:flex; align-items:center; gap:7px; flex-wrap:wrap; font-size:12px; }
+.linux-progress progress { width:100%; height:6px; }
+.workspace-uninstall { border:1px solid var(--border); padding:10px; border-radius:var(--radius); font-size:12px; }
 .memory-note { font-size:11px; color:var(--accent); padding:5px 12px; }
 .chat-delete-confirm { margin:6px; padding:9px; border:1px solid var(--red); border-radius:var(--radius); background:var(--panel2); }
 .chat-delete-confirm p { font-size:12px; color:var(--text); overflow-wrap:anywhere; }

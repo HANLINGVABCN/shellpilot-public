@@ -19,6 +19,8 @@ pub fn release(root:&Path)->Result<(),String>{
  #[cfg(windows)]{native::release(root)}
  #[cfg(not(windows))]{let _=root;Ok(())}
 }
+#[cfg(windows)]pub struct VmJob(native::ProcessJob);
+#[cfg(windows)]pub fn vm_job(child:&tokio::process::Child)->Result<VmJob,String>{native::process_job(child).map(VmJob)}
 pub fn pick_folder()->Result<Option<String>,String>{
  #[cfg(windows)]{
   use std::os::windows::process::CommandExt;
@@ -97,6 +99,7 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
   fn TerminateJobObject(job:Handle,code:u32)->i32;
   fn CreateFileW(path:*const u16,access:u32,sharing:u32,attributes:*const SecurityAttributes,disposition:u32,flags:u32,template:Handle)->Handle;
   fn GetFileInformationByHandle(handle:Handle,info:*mut FileInfo)->i32;
+  fn OpenProcess(access:u32,inherit:i32,pid:u32)->Handle;
  }
  #[link(name="userenv")]extern "system"{
   fn CreateAppContainerProfile(name:*const u16,display:*const u16,description:*const u16,capabilities:*const SidAttributes,count:u32,sid:*mut Sid)->i32;
@@ -246,6 +249,14 @@ pub async fn execute(root:&Path,command:&str,network:bool,timeout:u64,cancel:Opt
  }
  struct HandleGuard(Handle);
  impl Drop for HandleGuard{fn drop(&mut self){if self.0!=0{unsafe{CloseHandle(self.0);}}}}
+ pub struct ProcessJob(HandleGuard);unsafe impl Send for ProcessJob{}
+ pub fn process_job(child:&tokio::process::Child)->Result<ProcessJob,String>{
+  let process=HandleGuard(unsafe{OpenProcess(0x0101,0,child.id().ok_or("Linux进程已退出")?)});if process.0==0{return Err(error("Linux进程读取失败"));}
+  let job=HandleGuard(unsafe{CreateJobObjectW(null(),null())});if job.0==0{return Err(error("Linux运行进程组创建失败"));}
+  let mut limits:ExtendedLimits=unsafe{zeroed()};limits.basic.flags=0x00002000|0x00000008|0x00000100;limits.basic.active=8;limits.process_memory=1024*1024*1024;
+  checked(unsafe{SetInformationJobObject(job.0,9,(&limits as *const ExtendedLimits).cast(),size_of::<ExtendedLimits>() as u32)},"Linux进程限制设置失败")?;
+  checked(unsafe{AssignProcessToJobObject(job.0,process.0)},"Linux进程组绑定失败")?;Ok(ProcessJob(job))
+ }
  pub struct DirectoryHandle(HandleGuard);unsafe impl Send for DirectoryHandle{}
  pub fn hold_directory(root:&Path,directory:&Path)->Result<Vec<DirectoryHandle>,String>{
   if !directory.starts_with(root){return Err("目录超出工作区".into());}

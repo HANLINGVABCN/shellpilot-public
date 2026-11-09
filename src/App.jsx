@@ -13,12 +13,14 @@ import { loadOrder, createSortable, makeClickSuppressor } from './sortable.js';
 import { PanelLeftIcon, PanelRightIcon, PromptIcon, ChartIcon, PinIcon, FolderIcon } from './icons.jsx';
 import FileManager from './components/FileManager.jsx';
 import HostIdentityPrompt from './components/HostIdentityPrompt.jsx';
+import WorkspacePanel from './components/WorkspacePanel.jsx';
 
 // 工作台一级标签：终端 / 性能监控 / 文件管理；二级标签是机器（逻辑完全一致：多开、×关闭、图钉固定、拖拽）
 const L1S = [
   { id: 'terminal', label: '终端' },
   { id: 'monitor', label: '性能监控' },
-  { id: 'files', label: '文件管理' }
+  { id: 'files', label: '文件管理' },
+  { id: 'workspace', label: '📁 工作区' }
 ];
 
 const newSessionId = () => 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -499,7 +501,7 @@ export default function App() {
   const activeTermSession = termSessions.find((s) => s.id === activeTerm);
   const activeMonSession = monSessions.find((s) => s.id === activeMon);
   const activeFileSession = fileSessions.find((s) => s.id === activeFile);
-  const activeWorkHost = (l1 === 'terminal' ? activeTermSession : l1 === 'monitor' ? activeMonSession : activeFileSession)?.hostId;
+  const activeWorkHost = (l1 === 'terminal' ? activeTermSession : l1 === 'monitor' ? activeMonSession : l1 === 'files' ? activeFileSession : null)?.hostId;
   const connectionMap = {...probeMap};
   for (const session of termSessions) {
     const status = statusBySession[session.id];
@@ -570,7 +572,7 @@ export default function App() {
                 <div className="tabs" ref={l1TabsRef} title="长按拖动可调整顺序，第一位的为进入工作台时的默认页">
                   {l1Order.map((id) => {
                     const t = L1S.find((x) => x.id === id);
-                    const n = id === 'terminal' ? termSessions.length : id === 'monitor' ? monSessions.length : fileSessions.length;
+                    const n = id === 'terminal' ? termSessions.length : id === 'monitor' ? monSessions.length : id === 'files' ? fileSessions.length : 0;
                   return (
                   <button
                     key={id}
@@ -596,7 +598,7 @@ export default function App() {
             </div>
 
             {/* 二级标签条：终端 / 监控同一套交互（点击切换、×关闭、条内拖拽排序、＋新开） */}
-            <div className="subtabs" ref={l1 === 'terminal' ? termStripRef : l1 === 'monitor' ? monStripRef : null}>
+            {l1!=='workspace'&&<div className="subtabs" ref={l1 === 'terminal' ? termStripRef : l1 === 'monitor' ? monStripRef : null}>
               {l1 === 'terminal' ? (
                 <>
                   {termSessions.map((s) => {
@@ -700,13 +702,13 @@ export default function App() {
                   {fileSessions.length === 0 && <span className="subtab-hint">点左侧机器的「文件」，或把它拖到下面区域</span>}
                 </>
               )}
-            </div>
+            </div>}
 
             <div className="work">
               <div
                 className={'stage' + (dragOver ? ' drop-ok' : '')}
                 onDragOver={(e) => {
-                  if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('text/sp-host')) {
+                  if (l1!=='workspace'&&e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('text/sp-host')) {
                     e.preventDefault();
                     setDragOver(true);
                   }
@@ -716,6 +718,7 @@ export default function App() {
                   e.preventDefault();
                   setDragOver(false);
                   const hid = e.dataTransfer.getData('text/sp-host');
+                  if(l1==='workspace')return;
                   if (!hid) return;
                   // 拖到哪个页就开哪个：终端 = 新开终端；监控 = 新开监控；文件管理 = 新开文件管理
                   if (l1 === 'monitor') openMonitor(hid, true);
@@ -730,6 +733,7 @@ export default function App() {
                 )}
                 <HostIdentityPrompt hostId={activeWorkHost} hosts={hosts} />
                 <div className="stage-content">
+                {l1==='workspace'&&<div className="stage-pane show"><WorkspacePanel fullPage onSettings={()=>setView('settings')}/></div>}
                 {l1 === 'terminal' && termSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeTerm === s.id ? ' show' : '')}>
                     <TerminalView

@@ -16,9 +16,10 @@ sudo chroot "$root" /sbin/apk add --no-cache linux-virt openssh openrc ca-certif
 sudo install -m 755 runtime/guest-init "$root/sbin/shellpilot-init"
 sudo mkdir -p "$root/workspace" "$root/root/.ssh"
 sudo chroot "$root" /usr/bin/ssh-keygen -A
-sudo sed -i 's/^root:\*/root:!/' "$root/etc/shadow"
+sudo sed -i 's/^root:[^:]*:/root::/' "$root/etc/shadow"
 sudo tee "$root/etc/ssh/sshd_config" >/dev/null <<'SSH'
 Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
 PermitRootLogin prohibit-password
 PasswordAuthentication no
 KbdInteractiveAuthentication no
@@ -32,6 +33,7 @@ sudo umount "$root/dev" "$root/proc" "$root/sys"
 trap - EXIT
 sudo cp "$root/boot/vmlinuz-virt" runtime-build/assets/vmlinuz
 sudo cp "$root/boot/initramfs-virt" runtime-build/assets/initramfs
+sudo cp "$root/etc/ssh/ssh_host_ed25519_key.pub" runtime-build/assets/hostkey.pub
 truncate -s 1G runtime-build/assets/disk.raw
 sudo mkfs.ext4 -q -F -d "$root" runtime-build/assets/disk.raw
 qemu-img convert -f raw -O qcow2 -c runtime-build/assets/disk.raw runtime-build/assets/base.qcow2

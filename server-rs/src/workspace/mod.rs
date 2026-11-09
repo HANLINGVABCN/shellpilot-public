@@ -1,5 +1,9 @@
 //! Local workspace capabilities. Shell commands are run by the OS sandbox.
 pub mod windows;
+pub mod linux_runtime;
+pub mod linux_vm;
+pub mod android;
+pub mod linux_proxy;
 use std::{path::{Path,PathBuf},sync::Arc};
 use serde::{Serialize,Deserialize};
 use serde_json::{Value,json};
@@ -7,13 +11,14 @@ use tokio::sync::Mutex;
 use axum::{Json,extract::{State,Query},response::{Response,IntoResponse},http::StatusCode};
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(rename_all="camelCase")]
-pub struct WorkspaceConfig{pub directory:String,#[serde(default)]pub enabled:bool,#[serde(default)]pub network:bool}
-impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false}}}
-pub struct WorkspaceHub{pub mutation:Arc<Mutex<()>>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>}
+pub struct WorkspaceConfig{pub directory:String,#[serde(default)]pub enabled:bool,#[serde(default)]pub network:bool,#[serde(default="native_engine")]pub engine:String,#[serde(default)]pub auto_start:bool}
+fn native_engine()->String{if cfg!(target_os="android"){"linux".into()}else{"native".into()}}
+impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false,engine:native_engine(),auto_start:false}}}
+pub struct WorkspaceHub{pub mutation:Arc<Mutex<()>>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>,pub linux:linux_runtime::LinuxHub}
 impl WorkspaceHub{
- pub fn new()->Self{Self{mutation:Arc::new(Mutex::new(())),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0}}
+ pub fn new()->Self{Self{mutation:Arc::new(Mutex::new(())),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0,linux:linux_runtime::LinuxHub::new()}}
  pub async fn load(&self){*self.config.lock().await=serde_json::from_value(crate::load_json_or("workspace.json",json!({"directory":"","enabled":false,"network":false}))).unwrap_or_default();}
- pub async fn snapshot(&self)->Value{let config=self.config.lock().await.clone();json!({"directory":config.directory,"enabled":config.enabled,"network":config.network,"supported":cfg!(windows)})}
+ pub async fn snapshot(&self)->Value{let config=self.config.lock().await.clone();json!({"directory":config.directory,"enabled":config.enabled,"network":config.network,"engine":config.engine,"autoStart":config.auto_start,"supported":cfg!(windows)||cfg!(target_os="android")})}
  pub async fn root(&self)->Result<PathBuf,String>{let c=self.config.lock().await;if !c.enabled{return Err("工作区已关闭".into());}let root=PathBuf::from(&c.directory);reject_links(&root)?;let normalized=canonical(&root)?;if normalized!=root{return Err("工作区路径已变化，请重新配置".into());}Ok(root)}
 }
 fn result(value:Result<Value,String>)->Response{match value{Ok(v)=>Json(v).into_response(),Err(e)=>(StatusCode::BAD_REQUEST,Json(json!({"error":e}))).into_response()}}
@@ -25,7 +30,8 @@ async fn blocking<T:Send+'static>(work:impl FnOnce()->Result<T,String>+Send+'sta
  tokio::task::spawn_blocking(work).await.map_err(|e|format!("工作区设置未完成：{e}"))?
 }
 pub async fn configure_inner(st:&Arc<crate::AppState>,config:WorkspaceConfig)->Result<(),String>{
- if !cfg!(windows){return Err("本机隔离工作区目前支持Windows".into());}
+ if !cfg!(windows)&&!cfg!(target_os="android"){return Err("本机工作区目前支持Windows和Android".into());}
+ if !["native","linux"].contains(&config.engine.as_str())||cfg!(target_os="android")&&config.engine!="linux"{return Err("工作区运行方式无效".into());}
  let permit=st.workspace.mutation.clone().try_lock_owned().map_err(|_|"工作区正在处理其他操作，请稍后再保存".to_string())?;
  let st=st.clone();
  // Finish the serialized change even if its HTTP connection closes midway.
@@ -35,14 +41,21 @@ async fn configure_locked(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->
  if st.agent.lock().await.busy{return Err("先停止当前AI任务，再修改工作区".into());}
  let old=st.workspace.config.lock().await.clone();
  st.workspace.generation.send_modify(|n|*n+=1);
+ st.workspace.linux.stop().await;
+ #[cfg(target_os="android")]{
+  config.directory="/workspace".into();
+  if config.enabled&&!android::ready().await?{return Err("请先安装Linux工作区运行组件".into());}
+  crate::save_json("workspace.json",&json!(config));
+  *st.workspace.config.lock().await=config;st.broadcast_all(&json!({"type":"workspace-changed"}));return Ok(());
+ }
  config=blocking(move||{
   let root=validate_root(&PathBuf::from(config.directory.trim()))?;
   config.directory=root.to_string_lossy().to_string();
-  let newly_prepared=config.enabled&&(!old.enabled||old.directory!=config.directory);
+  let newly_prepared=config.enabled&&config.engine=="native"&&(!old.enabled||old.engine!="native"||old.directory!=config.directory);
   if newly_prepared{if let Err(error)=windows::prepare(&root){
    return match windows::release(&root){Ok(())=>Err(error),Err(cleanup)=>Err(format!("{error}；权限清理未完成：{cleanup}"))};
   }}
-  if old.enabled&&(old.directory!=config.directory||!config.enabled){if let Err(error)=windows::release(Path::new(&old.directory)){
+  if old.enabled&&old.engine=="native"&&(old.directory!=config.directory||!config.enabled||config.engine!="native"){if let Err(error)=windows::release(Path::new(&old.directory)){
    if newly_prepared{let _=windows::release(&root);}return Err(error);
   }}
   crate::save_json("workspace.json",&json!(config));
@@ -95,6 +108,10 @@ pub fn resolve(root:&Path,input:&str,create:bool)->Result<PathBuf,String>{
 }
 pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,String>{
  let _operation=st.workspace.mutation.lock().await;
+ #[cfg(target_os="android")]{
+  let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("工作区已关闭".into());}
+  return android::action(name,args,config.network).await;
+ }
  let root=st.workspace.root().await?;
  let relative=args["path"].as_str().unwrap_or("");
  match name{
@@ -132,11 +149,15 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
   "workspace_mkdir"=>{let path=resolve(&root,relative,true)?;let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;std::fs::create_dir(&path).map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "workspace_delete"=>{let path=resolve(&root,relative,false)?;if path==root{return Err("不能删除工作区根目录".into());}let _lease=windows::hold_directory(&root,path.parent().ok_or("路径无效")?)?;if path.is_dir(){std::fs::remove_dir(&path)}else{std::fs::remove_file(&path)}.map_err(|e|e.to_string())?;Ok(json!({"ok":true}))},
   "workspace_exec"=>{
-   reject_links(&root.join(".shellpilot"))?;
    let c=st.workspace.config.lock().await.clone();
    let command=crate::operations::text_arg(args,"command")?.to_string();
    let timeout=args["timeout"].as_u64().unwrap_or(120000).clamp(100,900000);
    let cancel=st.agent.lock().await.cancel.as_ref().map(|s|s.subscribe());
+   if c.engine=="linux"{
+    let status=st.workspace.linux.status().await;if status["installed"]!=true{return Err("请先安装Linux工作区".into());}
+    drop(_operation);return linux_vm::execute(st,&root,&command,c.network,timeout).await;
+   }
+   reject_links(&root.join(".shellpilot"))?;
    drop(_operation);
    windows::execute(&root,&command,c.network,timeout,cancel,st.workspace.generation.subscribe()).await
   },
