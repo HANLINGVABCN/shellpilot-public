@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { fileToBase64 } from '../binary.js';
+import DataBackup from './DataBackup.jsx';
 import MemorySettings from './MemorySettings.jsx';
 
 const rand = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
@@ -35,8 +35,6 @@ export default function SettingsView() {
   const [showPresets, setShowPresets] = useState({}); // providerId -> bool 显示常用模型行
   const [manual, setManual] = useState({ providerId: '', value: '' }); // 手动输入模型名
   const [newProv, setNewProv] = useState(null);
-  const [importFile, setImportFile] = useState(null);
-  const [importPass, setImportPass] = useState('');     // {name, baseURL, apiKey}
   const [zoomPct, setZoomPct] = useState(() => Math.round(parseFloat(localStorage.getItem('shellpilot-zoom') || '1') * 100));
   const [copiedField, setCopiedField] = useState('');
   const [mcpTab, setMcpTab] = useState('ui');
@@ -57,11 +55,6 @@ export default function SettingsView() {
       setTimeout(() => setCopiedField(''), 2000);
     } catch (_) {}
   };
-  const [importData, setImportData] = useState('');
-  const [importPreview, setImportPreview] = useState(null); // { hosts, providers, hasChats }
-  const [selHosts, setSelHosts] = useState(new Set());
-  const [selProviders, setSelProviders] = useState(new Set());
-  const [importMode, setImportMode] = useState('merge');
   const loadSettings=()=>api('/settings','GET',undefined,{timeoutMs:10000}).then(value=>{setS(value);setErr('');}).catch(e=>setErr(e.message));
 
   useEffect(() => {
@@ -102,68 +95,6 @@ export default function SettingsView() {
 
   const providerName = (id) => s.providers.find((p) => p.id === id)?.name || '（服务商已删除）';
   const defaultModel = s.models.find((m) => m.id === s.defaultModelId);
-
-  // ---------- 数据导入 / 导出 ----------
-  const doExport = async () => {
-    const pass = document.getElementById('export-pass')?.value || '';
-    if (!pass) { setErr('请先设置导出密码'); return; }
-    setErr('');
-    try {
-      const res = await fetch('/api/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pass })
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j.error || 'HTTP ' + res.status);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'shellpilot-export-' + Date.now() + '.spex';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setErr('导出失败: ' + e.message);
-    }
-  };
-
-  const doImport = async () => {
-    if (!importFile || !importPass) return;
-    setErr('');
-    try {
-      const data = await fileToBase64(importFile);
-      setImportData(data);
-      // 解析预览（不写入），成功后弹选择窗口
-      const pv = await api('/import/preview', 'POST', { password: importPass, data });
-      setImportPreview(pv);
-      setSelHosts(new Set(pv.hosts.map((h) => h.id)));
-      setSelProviders(new Set(pv.providers.map((p) => p.id)));
-    } catch (e) {
-      setErr('解析失败: ' + e.message);
-    }
-  };
-
-  const confirmImport = async () => {
-    setErr('');
-    try {
-      await api('/import', 'POST', {
-        password: importPass,
-        data: importData,
-        hostIds: [...selHosts],
-        providerIds: [...selProviders],
-        mode: importMode
-      });
-      setS(await api('/settings'));
-      setImportPreview(null);
-      window.dispatchEvent(new Event('shellpilot-hosts-changed'));
-      alert('导入完成。');
-    } catch (e) {
-      setErr('导入失败: ' + e.message);
-    }
-  };
 
   // ---------- 服务商 ----------
   const updProvider = (id, patch) =>
@@ -481,109 +412,7 @@ export default function SettingsView() {
         </div>
       </div>
 
-      <div className="sec-title">数据导入 / 导出</div>
-      <div className="tip-line">配置文件加密导出后可在任意设备导入。导入前会先解析文件，弹窗让你勾选要导入哪些机器、哪些服务商。</div>
-      <div className="card">
-        <div className="row" style={{ gap: 10 }}>
-          <div style={{ flex: 1 }}>
-            <label>导出密码</label>
-            <input type="password" id="export-pass" placeholder="设置导出密码" />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-            <button className="btn" onClick={doExport}>📤 导出配置</button>
-          </div>
-        </div>
-        <div className="row" style={{ gap: 10, marginTop: 10 }}>
-          <div style={{ flex: 1 }}>
-            <label>导入配置文件</label>
-            <input type="file" id="import-file" accept=".spex" onChange={(e) => setImportFile(e.target.files[0])} />
-          </div>
-          <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-            <input type="password" id="import-pass" placeholder="导入密码" style={{ width: 140 }} onChange={(e) => setImportPass(e.target.value)} />
-            <button className="btn" disabled={!importFile || !importPass} onClick={doImport}>📂 解析并选择</button>
-          </div>
-        </div>
-      </div>
-
-      {/* ---------- 导入选择弹窗 ---------- */}
-      {importPreview && (
-        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setImportPreview(null)}>
-          <div className="modal import-modal">
-            <div className="modal-title">选择要导入的内容</div>
-            {importPreview.hasChats && <div className="tip-line">全局 AI 对话会一起恢复；机器对话随勾选的机器导入。</div>}
-            <div className="import-cols">
-              <div className="import-col">
-                <label className="import-col-head">
-                  <input
-                    type="checkbox"
-                    checked={importPreview.hosts.length > 0 && selHosts.size === importPreview.hosts.length}
-                    onChange={(e) => setSelHosts(e.target.checked ? new Set(importPreview.hosts.map((h) => h.id)) : new Set())}
-                  />
-                  机器（全选）
-                </label>
-                {importPreview.hosts.length === 0 && <div className="menu-hint">文件里没有机器</div>}
-                {importPreview.hosts.map((h) => (
-                  <label key={h.id} className="import-item">
-                    <input
-                      type="checkbox"
-                      checked={selHosts.has(h.id)}
-                      onChange={(e) => {
-                        const next = new Set(selHosts);
-                        e.target.checked ? next.add(h.id) : next.delete(h.id);
-                        setSelHosts(next);
-                      }}
-                    />
-                    <span className="ii-name">{h.name}</span>
-                    <span className="ii-sub">{h.username}@{h.host}:{h.port}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="import-col">
-                <label className="import-col-head">
-                  <input
-                    type="checkbox"
-                    checked={importPreview.providers.length > 0 && selProviders.size === importPreview.providers.length}
-                    onChange={(e) => setSelProviders(e.target.checked ? new Set(importPreview.providers.map((p) => p.id)) : new Set())}
-                  />
-                  AI 服务商（全选）
-                </label>
-                {importPreview.providers.length === 0 && <div className="menu-hint">文件里没有服务商</div>}
-                {importPreview.providers.map((p) => (
-                  <label key={p.id} className="import-item">
-                    <input
-                      type="checkbox"
-                      checked={selProviders.has(p.id)}
-                      onChange={(e) => {
-                        const next = new Set(selProviders);
-                        e.target.checked ? next.add(p.id) : next.delete(p.id);
-                        setSelProviders(next);
-                      }}
-                    />
-                    <span className="ii-name">{p.name}</span>
-                    <span className="ii-sub">{p.baseURL}（{p.modelCount} 个模型）</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="import-mode">
-              <label>
-                <input type="radio" name="import-mode" checked={importMode === 'merge'} onChange={() => setImportMode('merge')} />
-                <span><b>合并导入（推荐）</b> —— 勾选的机器/服务商导进来；地址相同的原地更新（对话自动合并），其余照旧</span>
-              </label>
-              <label>
-                <input type="radio" name="import-mode" checked={importMode === 'overwrite'} onChange={() => setImportMode('overwrite')} />
-                <span><b>全部覆盖</b> —— 现有的机器/服务商/对话清掉，只保留勾选的</span>
-              </label>
-            </div>
-            <div className="modal-actions">
-              <button className="btn" onClick={() => setImportPreview(null)}>取消</button>
-              <button className="btn primary" disabled={selHosts.size === 0 && selProviders.size === 0} onClick={confirmImport}>
-                确认导入（机器 {selHosts.size} · 服务商 {selProviders.size}）
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DataBackup onImported={loadSettings}/>
 
       <div className="sec-title">SSH 服务器指纹</div>
       <div className="card">

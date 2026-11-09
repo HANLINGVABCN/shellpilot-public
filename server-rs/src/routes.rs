@@ -386,7 +386,13 @@ async fn export(State(_st): State<App>, raw: Result<Json<Value>, axum::extract::
     if password.is_empty() {
         return err400("密码不能为空");
     }
-    let plaintext = serde_json::to_string_pretty(&crate::crypt::export_all()).unwrap_or_default();
+    let all=crate::crypt::export_all();
+    if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
+    let payload=if let Some(value)=b.get("sections"){
+        let sections=match crate::backup::Sections::parse(value){Ok(sections)=>sections,Err(error)=>return err400(error)};
+        match crate::backup::export_selected(&all,sections){Ok(payload)=>payload,Err(error)=>return err400(error)}
+    }else{all};
+    let plaintext = serde_json::to_string_pretty(&payload).unwrap_or_default();
     let buf = crate::crypt::encrypt_data(plaintext.as_bytes(), &password);
     (
         [
@@ -463,7 +469,13 @@ async fn import_preview(State(_st): State<App>, raw: Result<Json<Value>, axum::e
         .as_object()
         .map(|m| m.values().any(|v| v.as_array().map(|a| !a.is_empty()).unwrap_or(false)))
         .unwrap_or(false);
-    Json(json!({ "hosts": hosts, "providers": providers, "hasChats": has_chats })).into_response()
+    let counts=match crate::backup::counts(&decrypted){Ok(counts)=>counts,Err(error)=>return err400(error)};
+    Json(json!({ "hosts": hosts, "providers": providers, "hasChats": has_chats,"counts":counts })).into_response()
+}
+
+async fn export_preview()->Response{
+    let data=crate::crypt::export_all();if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
+    match crate::backup::counts(&data){Ok(counts)=>Json(json!({"counts":counts})).into_response(),Err(error)=>err400(error)}
 }
 
 fn decode_and_decrypt(data: &str, password: &str) -> Result<Value, String> {
@@ -494,17 +506,21 @@ async fn import(State(st): State<App>, raw: Result<Json<Value>, axum::extract::r
         provider_ids: b.get("providerIds").cloned(),
         mode: opt_str(&b, "mode"),
     };
-    let result = match crate::import::prepare_import(&crate::crypt::export_all(), &parsed, options) {
+    let sections=if let Some(value)=b.get("sections"){match crate::backup::Sections::parse(value){Ok(sections)=>sections,Err(error)=>return err400(error)}}else{crate::backup::Sections::all()};
+    let current=crate::crypt::export_all();if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
+    let prepared=if b.get("sections").is_some(){crate::backup::prepare_selected(&current,&parsed,sections,options)}else{crate::import::prepare_import(&current,&parsed,options)};
+    let result = match prepared {
         Ok(r) => r,
         Err(e) => return err400(e),
     };
-    if let Some(memories)=parsed.get("memories") {
+    if let Some(memories)=parsed.get("memories").filter(|_|sections.memories) {
         if let Err(error)=crate::memories::import_records(memories,b["mode"]=="overwrite"){return err400(error);}
         st.broadcast_all(&json!({"type":"memories-changed"}));
     }
-    crate::save_json("hosts.json", result.get("hosts").unwrap_or(&json!([])));
-    crate::save_json("settings.json", result.get("settings").unwrap_or(&json!({})));
-    crate::save_json("chats.json", result.get("chats").unwrap_or(&json!({})));
+    if sections.hosts{crate::save_json("hosts.json", result.get("hosts").unwrap_or(&json!([])));}
+    if sections.providers{crate::save_json("settings.json", result.get("settings").unwrap_or(&json!({})));}
+    if sections.chats{crate::save_json("chats.json", result.get("chats").unwrap_or(&json!({})));}
+    if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
 
     // 变更过的主机：断开旧会话与 exec 连接
     let old_hosts: Vec<Value> = st.hosts.read().await.clone();
@@ -1301,6 +1317,7 @@ pub fn router(st: App) -> Router {
         .route("/api/chats/{key}/delete", post(chats_delete_batch))
         .route("/api/chats/{key}/{chat_id}", get(chats_get).delete(chats_delete))
         .route("/api/export", post(export))
+        .route("/api/export/preview",get(export_preview))
         .route("/api/import/preview", post(import_preview))
         .route("/api/import", post(import))
         .route("/api/fs/home", get(fs_home))

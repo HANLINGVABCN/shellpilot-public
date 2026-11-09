@@ -83,6 +83,8 @@ jobs:
       - run: cargo test --manifest-path server-rs/Cargo.toml
       - name: Data failure and recovery integration
         run: node scripts/verify-storage.mjs
+      - name: Selective encrypted backup integration
+        run: node scripts/verify-backup.mjs
       - name: Agent and MCP integration
         run: node scripts/verify-agent.mjs
       - name: Browser layout verification
@@ -96,6 +98,7 @@ jobs:
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
           node scripts/verify-workspace-ui.mjs
+          node scripts/verify-backup-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

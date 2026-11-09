@@ -6,6 +6,7 @@ pub mod safety; pub use safety::*;
 pub mod chats; pub use chats::*;
 pub mod metrics; pub use metrics::*;
 pub mod import; pub use import::*;
+pub mod backup;
 pub mod ai; pub use ai::*;
 pub mod ssh; pub use ssh::*;
 pub mod pool; pub use pool::*;
