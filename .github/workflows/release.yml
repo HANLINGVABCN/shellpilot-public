@@ -5,11 +5,10 @@ on:
       build_run:
         description: 'Successful Windows and Android build run ID'
         required: true
-        default: '42603270185'
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261109-linux-workspace'
+        default: 'build-20261109-workspace-tabs'
       title:
         description: 'Release title'
         required: true
@@ -81,24 +80,22 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：内置按需安装的 Alpine Linux 工作区，统一 Windows 和安卓文件协作。
+          ShellPilot：重整工作区文件管理、小标签与独立终端。
 
-          - 工作台新增「📁 工作区」大页面，顶部统一安装、卸载、启动停止、运行状态和随软件启动设置；文件列表和手动终端在同一页面，不新增小标签或左侧服务器入口。
-          - Windows 使用软件管理的 QEMU，安卓使用独立签名运行组件及 PRoot，两端使用 Alpine 3.24.4，无需 WSL 或手机 Root。
-          - 只有点击安装时下载环境，固定版本与 SHA256 校验，支持暂停续传和备用入口。Windows首次约125MB，安卓arm64运行组件约4.2MB；普通更新不重复下载同一环境。
-          - 默认按需启动，可手动启停和选择随软件启动；终端支持交互与尺寸变化，停止前保存文件和环境磁盘。卸载保留工作文件。
-          - AI 知道安装、启用和联网状态，能说明直接服务器文件管理上传与工作区处理后上传两种方式；内置 AI 支持授权服务器流式上传下载及上传校验。
-          - 保留原工作区、数据目录、记忆、任务队列和固定安卓签名；配置保存继续显示转圈与等待说明，二进制文件不会被当作文本误保存。
+          - 工作区以文件管理为主，使用与服务器文件管理一致的路径栏、工具栏和文件列表；文件区占满页面。
+          - 支持文件管理、终端与配置三类小标签，固定长度和关闭位置，支持固定、排序与刷新恢复。配置小标签唯一复用。
+          - 文件管理的配置按钮放在工具栏；终端的配置按钮固定在小标签栏右侧，与「＋」并排。点击终端或右键文件夹，可以新开对应目录的独立终端。
+          - 上传文件夹或拖拽保留子目录，拖拽支持空目录；同名文件明确报错，不覆盖。安卓使用系统目录选择器逐个导入文件。
+          - 文件支持复制、剪切、粘贴、重命名、编辑和删除。多个终端各自拥有输入输出和目录，关闭一个不会关闭其他会话。
+          - 工作区统一使用内置Alpine Linux，旧PowerShell配置保留原目录和文件并转换运行方式。Windows未安装Linux仍能管理工作区文件，执行命令和终端需要安装。
+          - 不自动下载Linux；安卓运行组件沿用固定签名和包名，仅更新服务层并复用原生二进制。Windows继续复用原QEMU与基础磁盘。
+          - 应用数据目录、已有主机、聊天、记忆与任务队列保留，外部MCP工具范围保持现有设置。
 
-          [完整运行环境验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42597735254)覆盖实际 Windows QEMU 启动、文件同步、真实终端、重启和卸载保留，以及安卓模拟器和主应用 JNI/Binder 上传下载。[首次下载安装验收](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42603262341)检查实际下载、校验、系统安装URI和缓存复用。[应用回归](https://github.com/HANLINGVABCN/shellpilot-public/actions/runs/42603276178)全部通过，包含后台、AI/MCP、两端工作区页面、旧终端与数据保留。
+          使用方法见 [工作区说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。全部构建与运行检查在GitHub进行，本机不下载构建依赖。
 
-          原数据目录保留，Android 沿用固定 ShellPilot 签名。工作区用于 Windows，Android 保留现有功能。外部 MCP 的权限与授权机器范围不变；工作区使用方法见 [说明](https://github.com/HANLINGVABCN/shellpilot-public/blob/main/docs/WORKSPACE.md)。
+          Windows安装使用ShellPilot-Windows-Setup.exe；便携更新使用shellpilot-app.exe；安卓主应用使用ShellPilot-arm64.apk。Linux运行环境仍由用户在工作区配置标签点击安装。
 
-          聊天阅读仍只显示侧边向下箭头。
-
-          Windows 安装使用 ShellPilot-Windows-Setup.exe；便携更新替换 shellpilot-app.exe；Android 使用 ShellPilot-arm64.apk。
-
-          发布直接复制通过检查的构建文件，不重新编译或重新签名。
+          发布直接复制通过检查的构建文件，不重复编译或重新签名。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release

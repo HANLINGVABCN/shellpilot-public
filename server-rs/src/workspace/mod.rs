@@ -174,6 +174,8 @@ pub fn schemas()->Vec<Value>{
  schema("workspace_read","读取工作区文本文件",json!({"path":path}),vec!["path"]),
  schema("workspace_write","创建或更新工作区文件；修改已有文件请传读取时的expectedHash",json!({"path":path,"content":{"type":"string"},"expectedHash":{"type":"string"}}),vec!["path","content"]),
  schema("workspace_mkdir","在工作区创建目录",json!({"path":path}),vec!["path"]),
+ schema("workspace_rename","重命名或移动工作区文件，目标已存在时拒绝覆盖",json!({"path":path,"to":path}),vec!["path","to"]),
+ schema("workspace_copy","在工作区复制文件或目录；目标目录path为空表示根目录，move可选择移动，同名副本自动改名",json!({"path":path,"paths":{"type":"array","items":{"type":"string"}},"move":{"type":"boolean"}}),vec!["path","paths"]),
  schema("workspace_delete","删除工作区文件或空目录",json!({"path":path}),vec!["path"]),
  schema("workspace_exec","在本机Linux工作区使用/bin/sh执行命令，只允许在工作区完成用户任务。",json!({"command":{"type":"string"},"timeout":{"type":"integer"}}),vec!["command"]),
  schema("workspace_upload_to_server","将工作区文件流式上传到授权服务器的新文件路径；不覆盖已有文件。适合先处理用户文件再上传。",json!({"host":{"type":"string"},"path":path,"remotePath":{"type":"string"}}),vec!["host","path","remotePath"]),

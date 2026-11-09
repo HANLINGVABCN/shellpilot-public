@@ -1,5 +1,5 @@
 {
-  "version": "alpine-3.24.4-v1",
+  "version": "alpine-3.24.4-v2",
   "packages": {
     "windows-qemu": {
       "file": "ShellPilot-QEMU-Windows.tar.gz",
@@ -9,7 +9,8 @@
       "urls": [
         "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-QEMU-Windows.tar.gz",
         "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025013"
-      ]
+      ],
+      "version": "alpine-3.24.4-v1"
     },
     "windows-guest": {
       "file": "ShellPilot-Linux-Guest.tar.gz",
@@ -19,26 +20,29 @@
       "urls": [
         "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Guest.tar.gz",
         "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025003"
-      ]
+      ],
+      "version": "alpine-3.24.4-v1"
     },
     "android-arm64": {
       "file": "ShellPilot-Linux-Android-aarch64.apk",
-      "bytes": 4195102,
-      "expandedBytes": 5243678,
-      "sha256": "b1271cce4fbcc462b04d6987067d6db25c2db743ad81d94fac826965a539ebde",
+      "bytes": 4199198,
+      "expandedBytes": 5247774,
+      "sha256": "9490b25cee1711713b23bdb904c76f831e1786928894d7422f2486d381744035",
+      "version": "alpine-3.24.4-v2",
       "urls": [
-        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Android-aarch64.apk",
-        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727024979"
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v2/ShellPilot-Linux-Android-aarch64.apk",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727316405"
       ]
     },
     "android-x86_64": {
       "file": "ShellPilot-Linux-Android-x86_64.apk",
       "bytes": 3875605,
       "expandedBytes": 4924181,
-      "sha256": "7d8590240b924984e75b62b2963e1e26325b33c459cf5d12fab0e149ea61c69f",
+      "sha256": "cb6b0b4eea5337e6c5a63c6586bb23eae142ad64abf8c01c88c7c547e59bb6b3",
+      "version": "alpine-3.24.4-v2",
       "urls": [
-        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v1/ShellPilot-Linux-Android-x86_64.apk",
-        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727025001"
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-v2/ShellPilot-Linux-Android-x86_64.apk",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/727316436"
       ]
     }
   }
