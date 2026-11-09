@@ -90,9 +90,11 @@ fs.copyFileSync('runtime/android/WorkspaceBridge.kt',path.join(javaRoot,'Workspa
 const mainFile=path.join(javaRoot,'MainActivity.kt');
 if(fs.existsSync(mainFile)){
  let source=fs.readFileSync(mainFile,'utf8');
- if(!source.includes('fun workspaceRuntime'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  fun workspaceRuntime(request: String): String = WorkspaceBridge.request(this, request)\n');
+ if(!source.includes('fun workspaceRuntime'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  @androidx.annotation.Keep\n  fun workspaceRuntime(request: String): String = WorkspaceBridge.request(this, request)\n');
+ else if(!source.includes('@androidx.annotation.Keep'))source=source.replace('fun workspaceRuntime','@androidx.annotation.Keep\n  fun workspaceRuntime');
  if(!source.includes('external fun registerWorkspaceBridge'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  private external fun registerWorkspaceBridge()\n').replace('super.onCreate(savedInstanceState)','super.onCreate(savedInstanceState)\n    registerWorkspaceBridge()');
  if(!source.includes('WorkspaceBridge.result'))source=source.replace('class MainActivity : TauriActivity() {','class MainActivity : TauriActivity() {\n  override fun onActivityResult(requestCode:Int, resultCode:Int, data:android.content.Intent?){ super.onActivityResult(requestCode,resultCode,data); WorkspaceBridge.result(this,requestCode,resultCode,data) }\n');
+ if(!source.includes('fun workspaceRuntime')||!source.includes('registerWorkspaceBridge()'))throw new Error('Android activity template changed; workspace bridge was not inserted');
  fs.writeFileSync(mainFile,source);
 }
 let appManifest=fs.readFileSync(manifestXml,'utf8');
@@ -100,3 +102,7 @@ if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManif
 if(!appManifest.includes('workspace-files'))appManifest=appManifest.replace('</application>',`<provider android:name="androidx.core.content.FileProvider" android:authorities="app.shellpilot.client.workspace-files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/workspace_files"/></provider></application>`);
 fs.writeFileSync(manifestXml,appManifest);
 fs.writeFileSync(path.join(resXmlDir,'workspace_files.xml'),'<paths xmlns:android="http://schemas.android.com/apk/res/android"><files-path name="linux-installer" path="linux-runtime/"/></paths>');
+const rules=path.join(androidRoot,'app/proguard-rules.pro');
+let keep=fs.existsSync(rules)?fs.readFileSync(rules,'utf8'):'';
+if(!keep.includes('workspaceRuntime'))keep+='\n-keepclassmembers class app.shellpilot.client.MainActivity { public java.lang.String workspaceRuntime(java.lang.String); private native void registerWorkspaceBridge(); }\n';
+fs.writeFileSync(rules,keep);
