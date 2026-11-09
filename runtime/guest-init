@@ -1,0 +1,18 @@
+#!/bin/sh
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /run/sshd /root/.ssh /workspace
+key=$(sed -n 's/.*spkey=\([^ ]*\).*/\1/p' /proc/cmdline)
+test -n "$key" || { echo 'Missing workspace public key'; poweroff -f; }
+printf '%s' "$key" | base64 -d > /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys
+ip link set lo up
+ip link set eth0 up
+ip addr add 10.0.2.15/24 dev eth0
+ip route add default via 10.0.2.2
+printf 'nameserver 10.0.2.3\n' > /etc/resolv.conf
+hostname shellpilot-workspace
+exec /usr/sbin/sshd -D -e

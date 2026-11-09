@@ -1,0 +1,32 @@
+name: linux-runtime
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  guest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq qemu-utils qemu-system-x86 e2fsprogs
+      - run: bash scripts/build-linux-guest.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-guest
+          path: runtime-build/ShellPilot-Linux-Guest.tar.gz
+  qemu:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-qemu mingw-w64-ucrt-x86_64-binutils
+      - run: python scripts/package-qemu-windows.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-qemu
+          path: runtime-build/ShellPilot-QEMU-Windows.tar.gz
