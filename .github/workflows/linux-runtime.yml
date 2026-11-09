@@ -80,6 +80,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: server-rs -> target
+          cache-on-failure: true
       - uses: actions/download-artifact@v4
         with:
           name: linux-guest
@@ -168,6 +169,7 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: npm ci
       - run: npm run icon
       - run: npm run build
@@ -184,6 +186,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
         run: |
           umask 077
+          mkdir -p runtime-build
           printf '%s' "$KEY_B64" | base64 --decode > /tmp/runtime-signing.p12
           trap 'rm -f /tmp/runtime-signing.p12' EXIT
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -path '*release*' | head -1)
