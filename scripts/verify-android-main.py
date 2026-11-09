@@ -1,5 +1,6 @@
 import subprocess,time,json,urllib.request
 subprocess.run(['adb','forward','tcp:3738','tcp:3737'],check=True)
+subprocess.run(['adb','uninstall','app.shellpilot.workspace'],check=True)
 subprocess.run(['adb','shell','am','start','-n','app.shellpilot.client/.MainActivity'],check=True)
 base='http://127.0.0.1:3738/api'
 def api(route,method='GET',body=None):
@@ -12,7 +13,6 @@ while True:
     except Exception:
         if time.time()>deadline:raise
         time.sleep(.3)
-subprocess.run(['adb','uninstall','app.shellpilot.workspace'],check=True)
 subprocess.run(['adb','shell','appops','set','app.shellpilot.client','REQUEST_INSTALL_PACKAGES','allow'],check=True)
 api('/workspace/linux/install','POST',{})
 deadline=time.time()+90
