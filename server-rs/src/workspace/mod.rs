@@ -111,7 +111,7 @@ pub async fn call(st:&Arc<crate::AppState>,name:&str,args:&Value)->Result<Value,
  let _operation=st.workspace.mutation.lock().await;
  #[cfg(target_os="android")]{
   let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("工作区已关闭".into());}
-  return android::action(name,args,config.network).await;
+  let result=android::action(name,args,config.network).await;st.workspace.linux.touch();return result;
  }
  let root=st.workspace.root().await?;
  let relative=args["path"].as_str().unwrap_or("");

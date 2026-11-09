@@ -98,7 +98,7 @@ jobs:
       - run: cargo build --manifest-path server-rs/Cargo.toml
       - run: node scripts/verify-linux-windows.mjs
   android-check:
-    needs: android
+    needs: [android, main-fixture]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -114,6 +114,10 @@ jobs:
         with:
           name: linux-android-x86_64
           path: runtime-build/component
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-main-fixture
+          path: runtime-build/main-app
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -140,3 +144,51 @@ jobs:
             adb shell 'echo PRIVATE_CANARY > /data/local/tmp/shellpilot-private-canary; chmod 600 /data/local/tmp/shellpilot-private-canary'
             adb shell am instrument -w app.shellpilot.workspace.test/.RuntimeTest | tee runtime-build/android-test.txt
             grep -F 'PASS: Android PRoot' runtime-build/android-test.txt
+            adb install runtime-build/main-app/ShellPilot-x86_64-test.apk
+            python3 scripts/verify-android-main.py
+  main-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0 ndk;27.0.12077973'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm run icon
+      - run: npm run build
+      - run: npm run tauri -- android init
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973
+      - run: node scripts/patch-android.mjs
+      - run: npm run tauri -- android build --apk --target x86_64
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973
+      - name: Sign emulator fixture with existing key
+        env:
+          KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          umask 077
+          printf '%s' "$KEY_B64" | base64 --decode > /tmp/runtime-signing.p12
+          trap 'rm -f /tmp/runtime-signing.p12' EXIT
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -path '*release*' | head -1)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks /tmp/runtime-signing.p12 --ks-key-alias shellpilot --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out runtime-build/ShellPilot-x86_64-test.apk "$apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-main-fixture
+          path: runtime-build/ShellPilot-x86_64-test.apk

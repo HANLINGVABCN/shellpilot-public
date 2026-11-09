@@ -120,7 +120,7 @@ pub async fn execute(st:&Arc<crate::AppState>,root:&Path,script:&str,network:boo
 pub async fn start(st:&Arc<crate::AppState>)->Result<(),String>{
  let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("请先启用工作区".into());}if config.engine!="linux"{return Err("请选择内置Alpine Linux运行环境".into());}
  if st.workspace.linux.status().await["installed"]!=true{return Err("请先安装Linux运行环境".into());}
- #[cfg(target_os="android")]return super::android::request(json!({"op":"start","network":config.network})).await.map(|_|());
+ #[cfg(target_os="android")]{super::android::request(json!({"op":"start","network":config.network})).await?;st.workspace.linux.touch();return Ok(());}
  let root=st.workspace.root().await?;let mut vm=st.workspace.linux.vm.lock().await;
  if vm.is_none(){*vm=Some(launch(&root,config.network).await?);}st.workspace.linux.touch();Ok(())
 }

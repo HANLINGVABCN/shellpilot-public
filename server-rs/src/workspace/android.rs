@@ -42,6 +42,9 @@ pub async fn terminal(st:std::sync::Arc<crate::AppState>,socket:axum::extract::w
  use futures_util::{SinkExt,StreamExt};
  let config=st.workspace.config.lock().await.clone();if !config.enabled{return Err("工作区已关闭".into());}
  request(json!({"op":"terminal-open","network":config.network})).await?;
+ st.workspace.linux.terminals.fetch_add(1,std::sync::atomic::Ordering::SeqCst);st.workspace.linux.touch();
+ struct Session(std::sync::Arc<crate::AppState>);impl Drop for Session{fn drop(&mut self){self.0.workspace.linux.terminals.fetch_sub(1,std::sync::atomic::Ordering::SeqCst);self.0.workspace.linux.touch();}}
+ let _session=Session(st.clone());
  let (mut sender,mut receiver)=socket.split();let mut interval=tokio::time::interval(std::time::Duration::from_millis(150));let mut generation=st.workspace.generation.subscribe();
  loop{tokio::select!{
   _=interval.tick()=>{let output=request(json!({"op":"terminal-output"})).await?;if let Some(text)=output["output"].as_str(){if !text.is_empty()&&sender.send(axum::extract::ws::Message::Text(text.into())).await.is_err(){break;}}if output["closed"]==true{break;}},

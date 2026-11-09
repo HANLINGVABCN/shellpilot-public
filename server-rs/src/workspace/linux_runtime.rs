@@ -21,11 +21,13 @@ impl LinuxHub{
  pub async fn status(&self)->Value{
   let status=self.install.lock().await.clone();let m=manifest();let keys=package_keys();let total=keys.iter().filter_map(|key|m.packages.get(*key)).map(|p|p.bytes).sum::<u64>();
   let mut ready=!keys.is_empty()&&keys.iter().all(|key|installed(key,&m.version));
-  #[cfg(target_os="android")]if ready{ready=super::android::ready().await.unwrap_or(false);}
+  #[cfg(target_os="android")]let companion=if ready{super::android::request(json!({"op":"status"})).await.unwrap_or(json!({}))}else{json!({})};
+  #[cfg(target_os="android")]if ready{ready=companion["installed"]==true;}
   let running=self.vm.try_lock().map(|vm|vm.is_some()).unwrap_or(true);
+  #[cfg(target_os="android")]let running=companion["running"]==true;
   json!({"phase":if ready&&!self.installing.load(std::sync::atomic::Ordering::SeqCst){"installed"}else{&status.phase},"received":status.received,"total":if status.total>0{status.total}else{total},"package":status.package,"error":status.error,"version":m.version,"supported":platform()!="unsupported","available":!keys.is_empty()&&keys.iter().all(|key|m.packages.contains_key(*key)),"installed":ready,"platform":platform(),"running":running})
  }
- pub async fn stop(&self){let mut vm=self.vm.lock().await;if let Some(mut process)=vm.take(){process.stop().await;}}
+ pub async fn stop(&self){#[cfg(target_os="android")]{let _=super::android::request(json!({"op":"stop"})).await;}let mut vm=self.vm.lock().await;if let Some(mut process)=vm.take(){process.stop().await;}}
 }
 pub fn package_keys()->Vec<&'static str>{match platform(){"windows"=>vec!["windows-qemu","windows-guest"],"android-arm64"=>vec!["android-arm64"],"android-x86_64"=>vec!["android-x86_64"],_=>vec![]}}
 fn installed(key:&str,version:&str)->bool{let file=base().join(key).join("installed.json");std::fs::read(file).ok().and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok()).is_some_and(|v|v["version"]==version)}
@@ -124,11 +126,14 @@ pub async fn install_route(axum::extract::State(st):axum::extract::State<Arc<cra
 pub async fn pause(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::Json<Value>{st.workspace.linux.cancel.send_replace(true);axum::Json(json!({"paused":true}))}
 pub async fn stop(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::Json<Value>{st.workspace.generation.send_modify(|n|*n+=1);st.workspace.linux.stop().await;axum::Json(json!({"stopped":true}))}
 pub async fn run(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{super::result(super::linux_vm::start(&st).await.map(|_|json!({"running":true})))}
-pub async fn terminal_route(ws:axum::extract::ws::WebSocketUpgrade,axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{ws.on_upgrade(move|socket|async move{let _=super::linux_vm::terminal(st,socket).await;})}
+pub async fn terminal_route(ws:axum::extract::ws::WebSocketUpgrade,axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{ws.on_upgrade(move|mut socket|async move{if let Err(error)=super::linux_vm::start(&st).await{let _=socket.send(axum::extract::ws::Message::Text(format!("\r\n{error}\r\n").into())).await;return;}let _=super::linux_vm::terminal(st,socket).await;})}
 pub fn lifecycle(st:&Arc<crate::AppState>){let weak=Arc::downgrade(st);tokio::spawn(async move{
  if let Some(st)=weak.upgrade(){let config=st.workspace.config.lock().await.clone();if config.enabled&&config.engine=="linux"&&config.auto_start{let _=super::linux_vm::start(&st).await;}}
  loop{tokio::time::sleep(Duration::from_secs(30)).await;let Some(st)=weak.upgrade()else{break;};let config=st.workspace.config.lock().await.clone();
-  if !config.auto_start&&st.workspace.linux.terminals.load(std::sync::atomic::Ordering::SeqCst)==0&&crate::now_ms()-st.workspace.linux.last_used.load(std::sync::atomic::Ordering::SeqCst)>300000{if let Ok(mut guard)=st.workspace.linux.vm.try_lock(){if let Some(mut vm)=guard.take(){vm.stop().await;}}}
+  if !config.auto_start&&!st.agent.lock().await.busy&&st.workspace.linux.terminals.load(std::sync::atomic::Ordering::SeqCst)==0&&crate::now_ms()-st.workspace.linux.last_used.load(std::sync::atomic::Ordering::SeqCst)>300000{
+   #[cfg(target_os="android")]{st.workspace.linux.stop().await;}
+   #[cfg(not(target_os="android"))]if let Ok(mut guard)=st.workspace.linux.vm.try_lock(){if let Some(mut vm)=guard.take(){vm.stop().await;}}
+  }
  }
 });}
 pub async fn uninstall(axum::extract::State(st):axum::extract::State<Arc<crate::AppState>>)->axum::response::Response{super::result(uninstall_inner(&st).await)}
