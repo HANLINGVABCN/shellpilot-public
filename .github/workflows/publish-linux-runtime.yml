@@ -1,0 +1,64 @@
+name: publish-linux-runtime
+on:
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: Successful Linux runtime run including device checks
+        required: true
+      tag:
+        description: Fixed runtime tag
+        required: true
+        default: linux-alpine-3.24.4-v1
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: ${{ inputs.build_run }}
+      RUNTIME_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify completed runtime and device checks
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN --jq .conclusion)" = success
+          source=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN --jq .head_sha)
+          git diff --exit-code "$source" HEAD -- runtime/android runtime/guest-init scripts/build-linux-guest.sh scripts/build-android-runtime.sh scripts/package-qemu-windows.py scripts/patch-proot-network.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-guest
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: runtime-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-qemu
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: runtime-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-android-aarch64
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: runtime-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-android-x86_64
+          run-id: ${{ inputs.build_run }}
+          github-token: ${{ github.token }}
+          path: runtime-assets
+      - name: Publish fixed optional runtime assets
+        run: |
+          set -euo pipefail
+          cp runtime/README.md runtime-assets/RUNTIME-README.md
+          (cd runtime-assets && sha256sum ./*.apk ./*.tar.gz > SHA256SUMS.txt)
+          gh release create "$RUNTIME_TAG" runtime-assets/* --title 'ShellPilot · 可选 Alpine Linux 运行环境' --notes '按需安装的固定版本环境。仅在用户点击安装时下载，普通应用更新不会重复下载。运行器与两端设备检查通过后发布，工作文件由工作区单独保留。组件来源、许可证及构建说明见随附文档；安卓沿用固定 ShellPilot 签名。' --target "$GITHUB_SHA" --prerelease --latest=false
+          python3 scripts/runtime-manifest.py runtime-assets "$RUNTIME_TAG"
+          gh release upload "$RUNTIME_TAG" runtime-assets/runtime-manifest.json

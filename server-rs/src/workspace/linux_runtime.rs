@@ -70,7 +70,7 @@ async fn download(st:&Arc<crate::AppState>,key:&str,package:&Package)->Result<Pa
  if package.bytes==0||package.bytes>512*1024*1024||package.sha256.len()!=64{return Err("运行组件清单无效".into());}
  let target=base().join("downloads").join(&package.file);let part=target.with_extension("part");
  if tokio::fs::try_exists(&target).await.unwrap_or(false)&&verify(&target,&package.sha256).await?{return Ok(target);}
- let client=reqwest::Client::builder().connect_timeout(Duration::from_secs(12)).timeout(Duration::from_secs(900)).build().map_err(|e|e.to_string())?;
+ let client=reqwest::Client::builder().user_agent("ShellPilot/LinuxWorkspace").connect_timeout(Duration::from_secs(12)).timeout(Duration::from_secs(900)).build().map_err(|e|e.to_string())?;
  let mut last="下载源不可用".to_string();
  let mut paused=st.workspace.linux.cancel.subscribe();
  for round in 0..3{
@@ -82,7 +82,7 @@ async fn download(st:&Arc<crate::AppState>,key:&str,package:&Package)->Result<Pa
     if verify(&part,&package.sha256).await?{tokio::fs::rename(&part,&target).await.map_err(|e|e.to_string())?;return Ok(target);}
     tokio::fs::remove_file(&part).await.map_err(|e|e.to_string())?;offset=0;
    }
-   let request=if offset>0{client.get(url).header(reqwest::header::RANGE,format!("bytes={offset}-"))}else{client.get(url)};
+   let request=if offset>0{client.get(url).header(reqwest::header::RANGE,format!("bytes={offset}-"))}else{client.get(url)};let request=request.header(reqwest::header::ACCEPT,"application/octet-stream");
    let response=match tokio::select!{result=request.send()=>result,_=paused.changed()=>return Err("安装已暂停，下次继续会复用已下载内容".into())}{Ok(r)=>r,Err(e)=>{last=format!("下载失败：{e}");continue;}};
    if !response.status().is_success(){last=format!("下载源返回HTTP {}",response.status());continue;}
    if response.status()==reqwest::StatusCode::PARTIAL_CONTENT{

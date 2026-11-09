@@ -14,11 +14,11 @@ use axum::{Json,extract::{State,Query},response::{Response,IntoResponse},http::S
 #[serde(rename_all="camelCase")]
 pub struct WorkspaceConfig{pub directory:String,#[serde(default)]pub enabled:bool,#[serde(default)]pub network:bool,#[serde(default="native_engine")]pub engine:String,#[serde(default)]pub auto_start:bool}
 fn native_engine()->String{if cfg!(target_os="android"){"linux".into()}else{"native".into()}}
-impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false,engine:native_engine(),auto_start:false}}}
+impl Default for WorkspaceConfig{fn default()->Self{Self{directory:String::new(),enabled:false,network:false,engine:"linux".into(),auto_start:false}}}
 pub struct WorkspaceHub{pub mutation:Arc<Mutex<()>>,pub config:Mutex<WorkspaceConfig>,pub generation:tokio::sync::watch::Sender<u64>,pub linux:linux_runtime::LinuxHub}
 impl WorkspaceHub{
  pub fn new()->Self{Self{mutation:Arc::new(Mutex::new(())),config:Mutex::new(WorkspaceConfig::default()),generation:tokio::sync::watch::channel(0).0,linux:linux_runtime::LinuxHub::new()}}
- pub async fn load(&self){*self.config.lock().await=serde_json::from_value(crate::load_json_or("workspace.json",json!({"directory":"","enabled":false,"network":false}))).unwrap_or_default();}
+ pub async fn load(&self){*self.config.lock().await=crate::load_json("workspace.json").and_then(|value|serde_json::from_value(value).ok()).unwrap_or_default();}
  pub async fn snapshot(&self)->Value{let config=self.config.lock().await.clone();json!({"directory":config.directory,"enabled":config.enabled,"network":config.network,"engine":config.engine,"autoStart":config.auto_start,"supported":cfg!(windows)||cfg!(target_os="android")})}
  pub async fn root(&self)->Result<PathBuf,String>{let c=self.config.lock().await;if !c.enabled{return Err("工作区已关闭".into());}let root=PathBuf::from(&c.directory);reject_links(&root)?;let normalized=canonical(&root)?;if normalized!=root{return Err("工作区路径已变化，请重新配置".into());}Ok(root)}
 }

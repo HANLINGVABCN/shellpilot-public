@@ -12,7 +12,7 @@ while pending:
         library=prefix/'bin'/name
         if library.is_file():pending.append(library)
 firmware=prefix/'share/qemu'
-for name in ['bios-256k.bin','vgabios-stdvga.bin','kvmvapic.bin','efi-e1000.rom']:
+for name in ['bios-256k.bin','vgabios-stdvga.bin','kvmvapic.bin','linuxboot.bin','linuxboot_dma.bin','multiboot.bin','multiboot_dma.bin','pvh.bin','efi-e1000.rom']:
     source=firmware/name
     if source.is_file():shutil.copy2(source,dest/name)
 for directory in (prefix/'share/licenses').glob('*qemu*'):
