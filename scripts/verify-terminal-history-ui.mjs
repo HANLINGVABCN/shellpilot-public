@@ -1,7 +1,7 @@
 import {chromium} from 'playwright';import assert from 'node:assert/strict';import fs from 'node:fs';
 const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
-try{for(const zoom of [1,1.35]){
- const page=await browser.newPage({viewport:{width:1200,height:820},locale:'zh-CN'});const errors=[],sent=[];let socket,typed='',cursor=0;
+try{for(const mobile of [false,true])for(const zoom of [1,1.35]){
+ const page=await browser.newPage({viewport:{width:mobile?390:1200,height:820},locale:'zh-CN',userAgent:mobile?'Mozilla/5.0 (Linux; Android 13) Chrome/141 Mobile':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141'});const errors=[],sent=[];let socket,typed='',cursor=0;
  const hosts=[{id:'a',name:'Demo A',host:'a.example',username:'demo',port:22},{id:'b',name:'Demo B',host:'b.example',username:'demo',port:22}];
  const histories={a:['systemctl status demo.service','echo 中文完成','uptime'],b:['uname -a']};
  const osc=(host,code)=>'\x1b]777;ShellPilot;token-'+host+';'+code+'\x07';
@@ -24,7 +24,7 @@ try{for(const zoom of [1,1.35]){
   if(data.startsWith('\x1b[200~'))data=data.slice(6,-6);
   typed=typed.slice(0,cursor)+data+typed.slice(cursor);cursor+=data.length;output(data);
  }});});
- await page.goto('http://127.0.0.1:4173');const terminal=page.locator('.stage-pane.show .terminal-el'),input=terminal.locator('.xterm-helper-textarea'),ghost=terminal.locator('.terminal-history-suggestion');
+ await page.goto('http://127.0.0.1:4173');if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'工作台',exact:true}).click();const terminal=page.locator('.stage-pane.show .terminal-el'),input=terminal.locator('.xterm-helper-textarea'),ghost=terminal.locator('.terminal-history-suggestion');
  await input.waitFor();await input.focus();await input.pressSequentially('systemctl sta');await ghost.waitFor({state:'visible'});assert.equal(await ghost.textContent(),'tus demo.service');
  const screen=await terminal.locator('.xterm-screen').boundingBox(),position=await ghost.boundingBox();assert(position.x>screen.x&&position.x<screen.x+screen.width);assert(position.y>=screen.y&&position.y<screen.y+screen.height);
  const before=sent.length;await input.press('ArrowRight');await page.waitForFunction(()=>document.querySelector('.terminal-history-suggestion')?.hidden);assert(sent.slice(before).some(message=>message.data==='tus demo.service'));assert(!sent.slice(before).some(message=>message.data==='\r'));
@@ -34,5 +34,5 @@ try{for(const zoom of [1,1.35]){
  await input.press('Enter');output('Password: ');await input.pressSequentially('up');assert(await ghost.isHidden(),'No history suggestion inside password input');
  output('\x1b[?1049h');assert(await ghost.isHidden(),'No history suggestion in editors');output('\x1b[?1049l');prompt();
  await page.locator('.subtab').filter({hasText:'Demo B'}).click();const other=page.locator('.stage-pane.show .terminal-el'),otherInput=other.locator('.xterm-helper-textarea'),otherGhost=other.locator('.terminal-history-suggestion');await otherInput.focus();await otherInput.pressSequentially('up');assert(await otherGhost.isHidden(),'Other hosts must not use this history');await otherInput.press('Control+c');await otherInput.pressSequentially('una');await otherGhost.waitFor({state:'visible'});assert.equal(await otherGhost.textContent(),'me -a');
- assert.deepEqual(errors,[]);fs.mkdirSync('layout-screenshots',{recursive:true});await page.screenshot({path:'layout-screenshots/terminal-history-'+zoom+'.png'});await page.close();
+ assert.deepEqual(errors,[]);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));fs.mkdirSync('layout-screenshots',{recursive:true});await page.screenshot({path:'layout-screenshots/terminal-history-'+(mobile?'android-':'windows-')+zoom+'.png'});await page.close();
 }console.log('PASS: inline history suggestions, right-arrow/touch acceptance without Enter, editing/dismissal/Chinese, password/editor exclusion, host isolation and zoom');}finally{await browser.close();}

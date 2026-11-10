@@ -47,6 +47,7 @@ jobs:
           $preview = Start-Process -FilePath $nodeRuntime -ArgumentList @($viteEntry, 'preview', '--host', '127.0.0.1', '--port', '4173') -WindowStyle Hidden -PassThru
           try {
             node scripts/verify-reading-terminal.mjs
+            node scripts/verify-terminal-history-ui.mjs
           node scripts/verify-storage-ui.mjs
             if ($LASTEXITCODE -ne 0) { throw 'Windows terminal and reading checks failed' }
           } finally {
