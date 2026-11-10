@@ -1,9 +1,10 @@
 // Inline ghost text follows the shell prompt, never a guessed password/input line.
-export function attachTerminalHistory(term,element,{send}){
-  let token='',commands=[],prompt=null,column=0,editing=false,suggestion='',prefix='',suppressed='',composing=false,live=true,pendingInput=false,expectedLine=null,freshInput=false;
+export function attachTerminalHistory(term,element){
+  let token='',commands=[],prompt=null,column=0,editing=false,suggestion='',prefix='',suppressed='',composing=false,live=true,pendingInput=false,expectedLine=null,freshInput=false,frame=null;
   const screen=element.querySelector('.xterm-screen'),ghost=document.createElement('span');
   ghost.className='terminal-history-suggestion';ghost.hidden=true;ghost.setAttribute('role','button');ghost.setAttribute('aria-label','接受历史命令建议');screen.appendChild(ghost);
   const clear=()=>{ghost.hidden=true;suggestion='';};
+  const schedule=()=>{if(frame===null&&live)frame=requestAnimationFrame(()=>{frame=null;refresh();});};
   const reset=()=>{editing=false;expectedLine=null;prefix='';freshInput=false;prompt?.dispose();prompt=null;clear();};
   function refresh(){
     if(!live||!editing||!prompt||prompt.isDisposed||composing||pendingInput||term.buffer.active.type!=='normal'||term.getSelection()){clear();return;}
@@ -34,15 +35,15 @@ export function attachTerminalHistory(term,element,{send}){
     if(code==='P'){reset();}else if(code==='I'){prompt?.dispose();prompt=term.registerMarker(0);column=term.buffer.active.cursorX;editing=true;expectedLine=null;freshInput=false;suppressed='';}else if(code==='C'){reset();}
     return true;
   });
-  const listeners=[term.onWriteParsed(()=>{pendingInput=false;refresh();}),term.onCursorMove(refresh),term.onScroll(refresh),term.onResize(refresh),term.onSelectionChange(refresh)];
+  const listeners=[term.onWriteParsed(()=>{pendingInput=false;schedule();}),term.onCursorMove(schedule),term.onScroll(schedule),term.onResize(schedule),term.onSelectionChange(schedule)];
   const textarea=element.querySelector('.xterm-helper-textarea');
-  const compositionStart=()=>{composing=true;clear();},compositionEnd=()=>{composing=false;requestAnimationFrame(refresh);};
+  const compositionStart=()=>{composing=true;clear();},compositionEnd=()=>{composing=false;schedule();};
   textarea?.addEventListener('compositionstart',compositionStart);textarea?.addEventListener('compositionend',compositionEnd);
   const accept=()=>{if(ghost.hidden||!suggestion)return false;refresh();if(!suggestion)return false;const text=suggestion;clear();term.paste(text);term.focus();return true;};
   ghost.addEventListener('pointerdown',event=>{event.preventDefault();event.stopPropagation();accept();});
   return {
     setToken(value){if(token!==(value||'')){reset();token=value||'';}},
-    setCommands(value){commands=Array.isArray(value)?value.filter(command=>typeof command==='string'&&!/[\r\n\x00]/.test(command)):[];refresh();},
+    setCommands(value){commands=Array.isArray(value)?value.filter(command=>typeof command==='string'&&!/[\r\n\x00]/.test(command)):[];schedule();},
     input(data){
       pendingInput=true;clear();if(!editing)return;
       freshInput=true;
@@ -53,7 +54,7 @@ export function attachTerminalHistory(term,element,{send}){
       else expectedLine=null;
     },
     key(event){if(event.type!=='keydown')return true;if(event.key==='ArrowRight'&&!event.shiftKey&&!event.ctrlKey&&!event.altKey&&!event.metaKey&&accept()){event.preventDefault();return false;}if(event.key==='Escape'){suppressed=prefix;clear();}return true;},
-    reset,refresh,
-    dispose(){live=false;reset();parser.dispose();listeners.forEach(listener=>listener.dispose());textarea?.removeEventListener('compositionstart',compositionStart);textarea?.removeEventListener('compositionend',compositionEnd);ghost.remove();}
+    reset,refresh:schedule,
+    dispose(){live=false;cancelAnimationFrame(frame);reset();parser.dispose();listeners.forEach(listener=>listener.dispose());textarea?.removeEventListener('compositionstart',compositionStart);textarea?.removeEventListener('compositionend',compositionEnd);ghost.remove();}
   };
 }

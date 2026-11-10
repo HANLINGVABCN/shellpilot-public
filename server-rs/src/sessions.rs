@@ -24,9 +24,16 @@ pub struct TermSession {
     pub tx: tokio::sync::broadcast::Sender<String>,
     /// 写入 PTY 的命令通道
     pub input_tx: mpsc::UnboundedSender<InputMsg>,
-    pub handle: StdMutex<Option<russh::client::Handle<crate::ssh::ClientHandler>>>,
+    pub handle: tokio::sync::Mutex<Option<russh::client::Handle<crate::ssh::ClientHandler>>>,
     pub dead: AtomicBool,
     pub integration: StdMutex<Option<String>>,
+}
+
+struct SetupGuard{state:Arc<AppState>,session:Arc<TermSession>,complete:bool}
+impl Drop for SetupGuard{
+    fn drop(&mut self){
+        if !self.complete{let state=self.state.clone();let session=self.session.clone();tokio::spawn(async move{destroy_owned_session(&state,&session,"终端连接已取消").await;});}
+    }
 }
 
 pub fn session_broadcast(s: &TermSession, msg: &Value) {
@@ -36,9 +43,10 @@ pub fn session_broadcast(s: &TermSession, msg: &Value) {
 fn push_scrollback(s: &TermSession, text: &str) {
     let mut sb = s.scrollback.lock().unwrap();
     sb.push_str(text);
-    let len = sb.chars().count();
-    if len > 8000 {
-        *sb = sb.chars().skip(len - 8000).collect();
+    if sb.len() > 64*1024 {
+        let mut start=sb.len()-32*1024;
+        while !sb.is_char_boundary(start){start+=1;}
+        sb.drain(..start);
     }
 }
 
@@ -63,11 +71,12 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
         scrollback: StdMutex::new(String::new()),
         tx: tx.clone(),
         input_tx,
-        handle: StdMutex::new(None),
+        handle: tokio::sync::Mutex::new(None),
         dead: AtomicBool::new(false),
         integration: StdMutex::new(None),
     });
     st.sessions.lock().await.insert(sid.to_string(), session.clone());
+    let mut setup_guard=SetupGuard{state:st.clone(),session:session.clone(),complete:false};
     session_broadcast(&session, &json!({ "type": "status", "sessionId": sid, "hostId": host_id, "state": "connecting" }));
 
     let st_spawn = st.clone();
@@ -80,6 +89,20 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
         let mut shell: Channel<russh::client::Msg> =
             open_shell(&mut handle, 120, 30).await?;
         if let Some(bootstrap)=&bootstrap{shell.data(bootstrap.as_bytes()).await.map_err(|error|crate::ssh::SshError::new(error.to_string(),crate::ssh::ErrKind::Other))?;}
+        *session.handle.lock().await=Some(handle);
+        session.ready.store(true,Ordering::SeqCst);
+
+        // History serialization and disk writes run independently of PTY input/output.
+        let(history_tx,mut history_rx)=mpsc::channel::<String>(32);
+        let history_state=st.clone();let history_host=host_id.to_string();
+        tokio::spawn(async move{
+            while let Some(history)=history_rx.recv().await{
+                let host=history_host.clone();
+                if let Ok(Ok(commands))=tokio::task::spawn_blocking(move||crate::terminal_history::merge(&host,&history)).await{
+                    history_state.broadcast_all(&json!({"type":"terminal-history","hostId":history_host,"commands":commands}));
+                }
+            }
+        });
 
         // 输出泵：channel.wait() → scrollback + 会话广播；输入命令 → 写入/resize
         let s2 = session.clone();
@@ -87,9 +110,10 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
         let hid2 = host_id.to_string();
         tokio::spawn(async move {
             let mut decoder=crate::terminal_history::Stream::new(bootstrap.as_ref().map(|_|token.as_str()));
+            let integration_deadline=tokio::time::Instant::now()+std::time::Duration::from_secs(5);
             loop {
                 tokio::select! {
-                    _=tokio::time::sleep(std::time::Duration::from_secs(5)),if decoder.waiting=>{decoder.waiting=false;let _=shell.data(b"\r".as_slice()).await;},
+                    _=tokio::time::sleep_until(integration_deadline),if decoder.waiting=>{decoder.waiting=false;},
                     input = input_rx.recv() => {
                         match input {
                             Some(InputMsg::Data(bytes)) => {
@@ -106,7 +130,7 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
                             Some(ChannelMsg::Data { ref data })|Some(ChannelMsg::ExtendedData { ref data, .. }) => {
                                 let(text,histories)=decoder.feed(data);
                                 if !text.is_empty(){push_scrollback(&s2, &text);session_broadcast(&s2, &json!({ "type": "term-data", "sessionId": sid2, "hostId": hid2, "data": text }));}
-                                for history in histories{if let Ok(commands)=crate::terminal_history::merge(&hid2,&history){st_spawn.broadcast_all(&json!({"type":"terminal-history","hostId":hid2,"commands":commands}));}}
+                                for history in histories{let _=history_tx.try_send(history);}
                             }
                             Some(ChannelMsg::ExitStatus { .. }) | Some(ChannelMsg::Eof) => {}
                             Some(ChannelMsg::Close) | None => break,
@@ -117,30 +141,11 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
             }
             // 只有仍然是当前会话时才销毁（防止被重连替换掉的旧会话误杀新会话）
             let st2 = st_spawn.clone();
-            let sid3 = sid2.clone();
             tokio::spawn(async move {
-                let current=st2.sessions.lock().await.get(&sid3).is_some_and(|current|Arc::ptr_eq(current,&s2));
-                if current{destroy_session(&st2, &sid3, "SSH 会话已结束").await;}
+                destroy_owned_session(&st2, &s2, "SSH 会话已结束").await;
             });
         });
 
-        // os 信息探测（用完即放的临时借用）
-        let os_info = {
-            let out = crate::ssh::ssh_exec(
-                &mut handle,
-                "uname -srmo 2>/dev/null; grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d\\\" -f2",
-                8000,
-            )
-            .await;
-            let out=match out {
-                Ok(text)=>text,
-                Err(_)=>crate::ssh::ssh_exec(&mut handle,&crate::metrics::powershell_command("(Get-CimInstance Win32_OperatingSystem).Caption"),10000).await.unwrap_or_default(),
-            };
-            out.trim().to_string()
-        };
-        *session.os_info.lock().unwrap() = os_info;
-        *session.handle.lock().unwrap() = Some(handle);
-        session.ready.store(true, Ordering::SeqCst);
         session_broadcast(
             &session,
             &json!({
@@ -152,6 +157,20 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
                 ,"shellIntegration":session.integration.lock().unwrap().clone()
             }),
         );
+        // OS metadata is optional and must not delay interactive input readiness.
+        let metadata_session=session.clone();
+        tokio::spawn(async move{
+            let out=session_query(&metadata_session,"uname -srmo 2>/dev/null; grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d\\\" -f2",8000).await;
+            let out=match out{
+                Ok(text)=>text,
+                Err(_)=>session_query(&metadata_session,&crate::metrics::powershell_command("(Get-CimInstance Win32_OperatingSystem).Caption"),10000).await.unwrap_or_default(),
+            };
+            if !metadata_session.dead.load(Ordering::SeqCst){
+                *metadata_session.os_info.lock().unwrap()=out.trim().to_string();
+                session_broadcast(&metadata_session,&json!({"type":"status","sessionId":metadata_session.id,"hostId":metadata_session.host_id,"state":"connected",
+                    "os":out.trim(),"shellIntegration":metadata_session.integration.lock().unwrap().clone()}));
+            }
+        });
         crate::append_audit(json!({
             "ts": crate::now_ms(),
             "host": cfg.get("name").cloned().unwrap_or(Value::Null),
@@ -163,10 +182,23 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
     .await;
 
     if let Err(e) = setup {
-        st.sessions.lock().await.remove(sid);
+        destroy_owned_session(&st,&session,"SSH 连接未完成").await;
+        setup_guard.complete=true;
         return Err(e);
     }
+    setup_guard.complete=true;
     Ok(session)
+}
+
+async fn session_query(session:&TermSession,command:&str,ms:u64)->Result<String,String>{
+    let mut channel={
+        let mut transport=session.handle.lock().await;
+        let handle=transport.as_mut().ok_or("终端已关闭")?;
+        tokio::time::timeout(std::time::Duration::from_secs(1),handle.channel_open_session()).await
+            .map_err(|_|"终端信息通道超时")?.map_err(|error|error.to_string())?
+    };
+    let result=crate::ssh::exec_on_channel(&mut channel,command,None,ms).await.map_err(|error|error.message);
+    let _=channel.close().await;result
 }
 
 /// Node: ensureSession —— 建连去重 + 回放 + metrics 批量
@@ -180,10 +212,18 @@ pub async fn ensure_session(
     let send = |m: Value| {
         let _ = ws_tx.send(m.to_string());
     };
-    // 同一会话的并发创建去重：全局建连锁（创建频率低，串行即可）
+    // Only duplicate requests for this session wait; other hosts connect independently.
+    let lock={
+        let mut locks=st.session_creating.lock().await;
+        locks.retain(|_,lock|lock.strong_count()>0);
+        match locks.get(sid).and_then(std::sync::Weak::upgrade){
+            Some(lock)=>lock,
+            None=>{let lock=Arc::new(tokio::sync::Mutex::new(()));locks.insert(sid.into(),Arc::downgrade(&lock));lock}
+        }
+    };
+    let _create_lock=lock.lock().await;
     let exists = st.sessions.lock().await.get(sid).is_some();
     if !exists {
-        let _create_lock = st.session_creating.lock().await;
         let exists = st.sessions.lock().await.get(sid).is_some();
         if !exists {
             send(json!({"type":"status","sessionId":sid,"hostId":host_id,"state":"connecting"}));
@@ -198,6 +238,7 @@ pub async fn ensure_session(
         }
     }
     let Some(s) = st.sessions.lock().await.get(sid).cloned() else { return };
+    if s.host_id!=host_id{send(json!({"type":"error","message":"终端会话与服务器不匹配","requestType":"attach"}));return;}
     let state = if s.ready.load(Ordering::SeqCst) { "connected" } else { "connecting" };
     send(json!({ "type": "status", "sessionId": sid, "hostId": host_id, "state": state, "os": s.os_info.lock().unwrap().clone(),"shellIntegration":s.integration.lock().unwrap().clone() }));
     send(json!({ "type": "term-replay", "sessionId": sid, "hostId": host_id, "data": s.scrollback.lock().unwrap().clone() }));
@@ -224,21 +265,32 @@ pub async fn ensure_session(
 
 /// Node: destroySession
 pub async fn destroy_session(st: &Arc<AppState>, sid: &str, reason: &str) {
-    let s = { st.sessions.lock().await.get(sid).cloned() };
+    let s = { st.sessions.lock().await.remove(sid) };
     let Some(s) = s else { return };
+    close_session(s,reason).await;
+}
+
+async fn destroy_owned_session(st:&Arc<AppState>,s:&Arc<TermSession>,reason:&str){
+    let owned={
+        let mut sessions=st.sessions.lock().await;
+        if sessions.get(&s.id).is_some_and(|current|Arc::ptr_eq(current,s)){sessions.remove(&s.id)}else{None}
+    };
+    if let Some(session)=owned{close_session(session,reason).await;}
+}
+
+async fn close_session(s:Arc<TermSession>,reason:&str){
     s.dead.store(true, Ordering::SeqCst);
-    if let Some(h) = s.handle.lock().unwrap().take() {
+    if let Some(h) = s.handle.lock().await.take() {
         let mut h = h;
         tokio::spawn(async move {
             let _ = h.disconnect(Disconnect::ByApplication, "", "en").await;
         });
     }
-    st.sessions.lock().await.remove(sid);
     session_broadcast(
         &s,
         &json!({
             "type": "status",
-            "sessionId": sid,
+            "sessionId": s.id,
             "hostId": s.host_id,
             "state": "closed",
             "message": if reason.is_empty() { "连接已断开" } else { reason }

@@ -56,7 +56,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     term.open(ref.current);
     termRef.current = term;
     fitRef.current = fit;
-    const history=attachTerminalHistory(term,ref.current,{send:sendInput});historyRef.current=history;
+    const history=attachTerminalHistory(term,ref.current);historyRef.current=history;
     let historyLive=true;api('/terminal/history?host='+encodeURIComponent(hostId)).then(value=>{if(historyLive)history.setCommands(value.commands);}).catch(()=>{});
 
     // 选中即自动复制到系统剪贴板

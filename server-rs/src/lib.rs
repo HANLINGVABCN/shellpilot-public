@@ -99,7 +99,7 @@ pub struct AppState {
     /// 终端会话表（Node: sessions Map）
     pub sessions: Mutex<HashMap<String, Arc<crate::sessions::TermSession>>>,
     /// 会话创建去重锁
-    pub session_creating: Mutex<()>,
+    pub session_creating: Mutex<HashMap<String, std::sync::Weak<Mutex<()>>>>,
     /// exec 连接池 + 建连去重锁（Node: execConns / pendingExecConns）
     pub exec_conns: Mutex<HashMap<String, Arc<ExecConn>>>,
     pub exec_connecting: Mutex<HashMap<String, Arc<Mutex<()>>>>,
@@ -118,7 +118,7 @@ impl AppState {
             agent: Mutex::new(AgentState::default()),
             tx_all,
             sessions: Mutex::new(HashMap::new()),
-            session_creating: Mutex::new(()),
+            session_creating: Mutex::new(HashMap::new()),
             exec_conns: Mutex::new(HashMap::new()),
             exec_connecting: Mutex::new(HashMap::new()),
             probes: crate::probe::ProbeHub::new(),

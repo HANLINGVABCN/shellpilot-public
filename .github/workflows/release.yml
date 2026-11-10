@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261110-terminal-history'
+        default: 'build-20261110-terminal-latency'
       title:
         description: 'Release title'
         required: true
@@ -80,18 +80,15 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：SSH终端行内历史命令建议。
+          ShellPilot：修复终端输入回显卡顿。
 
-          - 输入命令前缀，后面用灰色显示匹配的历史命令；按右方向键或点击建议补全，仍需回车执行。
-          - Bash/Zsh从实际Shell历史读取已执行命令，每台服务器单独保存，同一机器多个终端标签共享；历史与AI记忆分开。
-          - 密码输入、编辑器按键不记录，包含敏感凭据的命令过滤。未支持的Shell继续普通终端操作，不猜测输入状态。
-          - 提示符钩子只在本次SSH会话生效，不写服务器Shell配置文件；中文跨SSH数据包保持完整。
-          - 已移除批量执行额外白名单，批量与单条命令共用当前权限和黑名单。
-          - 主机、聊天、记忆、工作区和四类选择备份保留，数据目录与永久安卓签名保持现有设置。
+          - SSH终端建连与重连独立处理，其他机器连接慢时不再堵住当前终端键盘输入。
+          - 不同会话并行连接，同一会话去重；关闭未完成连接时清理任务，旧任务不会误关新会话。
+          - Shell就绪即可交互，系统版本信息在后台探测。命令历史写入移出终端输入输出循环，行内建议按显示帧合并更新。
+          - 连续输入、慢连接和慢系统探测的实际回显测试在GitHub运行，继续验证Bash/Zsh历史、Windows和手机布局。
+          - 现有主机、聊天、记忆、工作区及备份功能保留，数据目录与永久安卓签名保持不变。
 
-          全部构建和运行验收在GitHub完成。Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。
-
-          发布直接复制通过检查的安装包，不重复编译或重新签名。
+          Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。发布直接复用已经通过检查的安装包，不重复构建。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release

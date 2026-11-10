@@ -54,6 +54,8 @@ async fn handle_socket(socket: WebSocket, st: Arc<AppState>) {
 
     // 会话级订阅：sessionId → 转发任务句柄（detach / 关闭时终止）
     let subs: Subs = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+    // SSH handshakes must not hold up keystrokes already queued on this socket.
+    let mut attaches: HashMap<String,(String,JoinHandle<()>)> = HashMap::new();
 
     // 出站泵：out_rx → WebSocket
     let outbound = tokio::spawn(async move {
@@ -75,6 +77,26 @@ async fn handle_socket(socket: WebSocket, st: Arc<AppState>) {
         let Ok(m) = serde_json::from_str::<Value>(&text) else { continue };
         let request_type=m["type"].as_str().unwrap_or("").to_string();
         if let Some(error)=crate::storage_fault(){if request_type!="chat-stop"{let _=out_tx_handler.send(json!({"type":"storage-error","error":error}).to_string());continue;}}
+        attaches.retain(|_,(_,task)| !task.is_finished());
+        if request_type=="attach" {
+            let sid=m["sessionId"].as_str().unwrap_or("").to_string();
+            let host=m["hostId"].as_str().unwrap_or("").to_string();
+            if sid.is_empty()||host.is_empty()||attaches.contains_key(&sid){continue;}
+            let state=st.clone();let output=out_tx_handler.clone();let subscriptions=subs.clone();
+            attaches.insert(sid,(host,tokio::spawn(async move{
+                if let Err(error)=handle_ws(&state,&output,&subscriptions,m).await{
+                    let _=output.send(json!({"type":"error","message":error,"requestType":"attach"}).to_string());
+                }
+            })));
+            continue;
+        }
+        if request_type=="detach" {
+            if let Some((_,task))=attaches.remove(m["sessionId"].as_str().unwrap_or("")){task.abort();let _=task.await;}
+        }else if request_type=="close-host" {
+            let host=m["hostId"].as_str().unwrap_or("");
+            let ids:Vec<_>=attaches.iter().filter(|(_, (id,_))|id==host).map(|(id,_)|id.clone()).collect();
+            for id in ids{if let Some((_,task))=attaches.remove(&id){task.abort();let _=task.await;}}
+        }
         if let Err(e) = handle_ws(&st, &out_tx_handler, &subs, m).await {
             let _ = out_tx_handler.send(json!({ "type": "error", "message": e,"requestType":request_type }).to_string());
         }
@@ -82,6 +104,7 @@ async fn handle_socket(socket: WebSocket, st: Arc<AppState>) {
 
     global_pump.abort();
     outbound.abort();
+    for (_,(_,task)) in attaches{task.abort();let _=task.await;}
     // Node: ws.close → 从所有会话的 clients 移除（终止全部订阅即等价）
     for (_, h) in subs.lock().await.drain() {
         h.abort();
@@ -92,8 +115,8 @@ async fn handle_socket(socket: WebSocket, st: Arc<AppState>) {
 async fn subscribe_session(st: &Arc<AppState>, subs: &Subs, sid: &str, out_tx: &mpsc::UnboundedSender<String>) {
     let Some(session) = st.sessions.lock().await.get(sid).cloned() else { return };
     let out = out_tx.clone();
+    let mut rx = session.tx.subscribe();
     let handle = tokio::spawn(async move {
-        let mut rx = session.tx.subscribe();
         loop {
             match rx.recv().await {
                 Ok(m) => {
