@@ -21,6 +21,7 @@ pub mod workspace;
 pub mod routes; pub use routes::*;
 pub mod ws; pub use ws::*;
 pub mod mcp; pub use mcp::*;
+pub mod mcp_runtime;
 pub mod operations;
 pub mod memories;
 pub mod jobs;

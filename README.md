@@ -71,7 +71,7 @@ ShellPilot 是运行在自己电脑或安卓设备上的 SSH 工作台。你可�
 
 ![工作区文件管理与小标签](docs/screenshots/workspace-windows.png)
 
-MCP 默认关闭。开启后，在设置里选择允许外部 AI 操作的服务器，并复制自动生成的启动配置。支持 MCP STDIO 的客户端可以启动 `shellpilot-app.exe --mcp`。具体接入及示例见 [MCP 文档](docs/MCP.md)。
+MCP默认关闭。开启后选择授权服务器并复制设置页自动生成的启动配置。Windows生成经过校验的独立MCP运行路径，主窗口重启和覆盖更新不会关闭正在使用该副本的MCP进程。旧`--mcp`入口继续支持；具体接入见 [MCP文档](docs/MCP.md)。
 
 | 工具 | 用途 |
 | --- | --- |

@@ -38,19 +38,7 @@ async fn execute(st: Arc<crate::AppState>, name: &str, args: &Value) -> Result<V
     if !crate::operations::schemas().iter().any(|tool|tool["name"]==name) { return Err(format!("未知 MCP 工具 {name}")); }
     let ctx = context(st.clone())?;
     *st.hosts.write().await = crate::load_json_or("hosts.json",json!([])).as_array().cloned().unwrap_or_default();
-    if let Some(runtime) = crate::load_json("runtime.json") {
-        if let (Some(port),Some(token)) = (runtime["port"].as_u64(),runtime["token"].as_str()) {
-            let response = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(2))
-                .timeout(std::time::Duration::from_secs(650)).build().map_err(|e|e.to_string())?
-                .post(format!("http://127.0.0.1:{port}/api/mcp/call")).bearer_auth(token)
-                .json(&json!({"name":name,"arguments":args})).send().await;
-            if let Ok(response)=response {
-                let success=response.status().is_success();
-                let value:Value=response.json().await.map_err(|e|e.to_string())?;
-                return if success { Ok(value) } else { Err(value["error"].as_str().unwrap_or("MCP 调用失败").into()) };
-            }
-        }
-    }
+    if let Some(result)=execute_via_gui(name,args).await?{return result;}
     let batch_requires_approval = if name=="vps_exec_batch" {
         let commands=args["commands"].as_array().ok_or("缺少 commands 数组")?;
         commands.iter().map(|args|crate::operations::text_arg(args,"command").map(|command|crate::safety::safety_check(command).mode!="auto"))
@@ -61,6 +49,38 @@ async fn execute(st: Arc<crate::AppState>, name: &str, args: &Value) -> Result<V
         || batch_requires_approval;
     if writes && ["ask","ai"].contains(&ctx.mode.as_str()) { return Err("此操作需要审批，请打开 ShellPilot 主窗口后重试".into()); }
     ctx.call(name,args).await
+}
+
+// Authentication is checked before dispatch, so only a rejected credential can
+// be retried for arbitrary commands. A lost response must not replay a write.
+async fn execute_via_gui(name:&str,args:&Value)->Result<Option<Result<Value,String>>,String>{
+    let client=reqwest::Client::builder().no_proxy().connect_timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(650)).build().map_err(|e|e.to_string())?;
+    for attempt in 0..2{
+        let Some(runtime)=crate::load_json("runtime.json")else{return Ok(None)};
+        let(Some(port),Some(token))=(runtime["port"].as_u64().filter(|port|*port>0&&*port<=65535),runtime["token"].as_str().filter(|token|!token.is_empty()))else{return Ok(None)};
+        let response=client.post(format!("http://127.0.0.1:{port}/api/mcp/call")).bearer_auth(token)
+            .json(&json!({"name":name,"arguments":args})).send().await;
+        match response{
+            Ok(response) if response.status()==reqwest::StatusCode::UNAUTHORIZED=>{
+                let current=crate::load_json("runtime.json").unwrap_or(json!({}));
+                if attempt==0&&current!=runtime{continue;}
+                return Ok(Some(Err("MCP认证未同步，请检查客户端与主窗口是否使用同一数据目录".into())));
+            },
+            Ok(response)=>{
+                let success=response.status().is_success();
+                let value:Value=response.json().await.map_err(|_|"主窗口响应中断，请先检查操作结果后重试；未重复执行命令")?;
+                return Ok(Some(if success{Ok(value)}else{Err(value["error"].as_str().unwrap_or("MCP调用失败").into())}));
+            },
+            Err(error) if error.is_connect()=>{
+                let current=crate::load_json("runtime.json").unwrap_or(json!({}));
+                if attempt==0&&current!=runtime{continue;}
+                return Ok(None);
+            },
+            Err(_)=>return Ok(Some(Err("ShellPilot重启或连接中断，未收到操作结果；请先检查实际状态，命令没有自动重放".into())))
+        }
+    }
+    Ok(None)
 }
 
 fn error(id:Value,code:i64,message:&str) {

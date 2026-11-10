@@ -25,6 +25,7 @@ jobs:
       - run: node scripts/verify-workspace-windows.mjs
       - run: node scripts/verify-backup.mjs
       - run: node scripts/verify-terminal-latency.mjs
+      - run: node scripts/verify-mcp-restart.mjs
   windows-reading:
     runs-on: windows-latest
     timeout-minutes: 15
@@ -94,6 +95,8 @@ jobs:
         run: node scripts/verify-agent.mjs
       - name: Batch commands use the shared execution policy
         run: node scripts/verify-batch-exec.mjs
+      - name: Same MCP process survives main app restarts
+        run: node scripts/verify-mcp-restart.mjs
       - name: Real Bash and Zsh terminal command history
         run: |
           command -v zsh || (sudo apt-get update -qq && sudo apt-get install -y -qq zsh)

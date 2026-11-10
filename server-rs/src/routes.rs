@@ -33,8 +33,11 @@ async fn mcp_call(State(st): State<App>, headers: axum::http::HeaderMap, Json(bo
     }
 }
 async fn mcp_config() -> Response {
-    let executable = std::env::current_exe().map(|p|p.to_string_lossy().to_string()).unwrap_or_default();
-    Json(json!({"command":executable,"args":["--mcp"],"env":{"SHELLPILOT_DATA":crate::data_dir().to_string_lossy()}})).into_response()
+    match tokio::task::spawn_blocking(crate::mcp_runtime::configuration).await{
+        Ok(Ok(config))=>Json(config).into_response(),
+        Ok(Err(error))=>err400(error),
+        Err(_)=>err400("MCP运行配置尚未就绪，请重试")
+    }
 }
 async fn ssh_keys() -> Response {
     let observed=crate::load_json_or("observed-host-keys.json",json!({}));

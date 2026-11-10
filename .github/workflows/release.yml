@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261110-terminal-latency'
+        default: 'build-20261110-mcp-lifecycle'
       title:
         description: 'Release title'
         required: true
@@ -80,15 +80,16 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：修复终端输入回显卡顿。
+          ShellPilot：MCP连接与主窗口重启、更新分开运行。
 
-          - SSH终端建连与重连独立处理，其他机器连接慢时不再堵住当前终端键盘输入。
-          - 不同会话并行连接，同一会话去重；关闭未完成连接时清理任务，旧任务不会误关新会话。
-          - Shell就绪即可交互，系统版本信息在后台探测。命令历史写入移出终端输入输出循环，行内建议按显示帧合并更新。
-          - 连续输入、慢连接和慢系统探测的实际回显测试在GitHub运行，继续验证Bash/Zsh历史、Windows和手机布局。
-          - 现有主机、聊天、记忆、工作区及备份功能保留，数据目录与永久安卓签名保持不变。
+          - Windows自动生成经过SHA256校验的独立MCP运行副本，按版本哈希保存，更新主程序不会覆盖客户端正在使用的EXE。
+          - MCP读取当前主窗口认证；认证轮换并在执行前被拒绝时刷新重试，主窗口关闭不关闭MCP标准输入输出进程。
+          - 执行中断未收到结果时不会自动重放修改命令，下一次调用仍可以继续。
+          - 验证同一个MCP进程跨多次主窗口重启、认证轮换和实际覆盖安装，权限关闭及主机范围继续生效。
+          - 第一次从旧启动路径切换到独立MCP路径需要客户端重新加载配置，后续无需因主窗口重启而重启客户端。
+          - 保留主机、聊天、记忆、终端历史、工作区和四类备份，沿用数据目录及永久安卓签名。
 
-          Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。发布直接复用已经通过检查的安装包，不重复构建。
+          全部构建与运行验收在GitHub进行。Windows使用ShellPilot-Windows-Setup.exe；安卓使用ShellPilot-arm64.apk。发布复用已验收安装包，不重复编译或重新签名。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release
