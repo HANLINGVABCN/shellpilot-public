@@ -22,7 +22,7 @@ public final class IntegratedRuntimeTest extends Instrumentation{
    for(String probe:probes){JSONObject result=call(service[0],new JSONObject().put("op","action").put("name","workspace_exec").put("network",true).put("arguments",new JSONObject().put("command",probe).put("timeout",5000)));if(result.optInt("exitCode",0)==0||result.optString("stdout").contains("PRIVATE_CREDENTIAL_CANARY"))throw new Exception("Boundary probe escaped: "+probe+" "+result.toString());}
    File probe=new File(context.getFilesDir(),"workspace/child-boundary-probe");
    try{
-    try(InputStream input=new FileInputStream(new File(context.getApplicationInfo().nativeLibraryDir,"libworkspace_boundary_probe.so"));OutputStream output=new FileOutputStream(probe)){byte[] buffer=new byte[65536];int size;while((size=input.read(buffer))>=0)output.write(buffer,0,size);}
+    try(InputStream probeInput=new FileInputStream(new File(context.getApplicationInfo().nativeLibraryDir,"libworkspace_boundary_probe.so"));OutputStream probeOutput=new FileOutputStream(probe)){byte[] buffer=new byte[65536];int size;while((size=probeInput.read(buffer))>=0)probeOutput.write(buffer,0,size);}
     android.system.Os.chmod(probe.getPath(),0700);
     JSONObject childResult=call(service[0],new JSONObject().put("op","action").put("name","workspace_exec").put("network",true).put("arguments",new JSONObject().put("command","./child-boundary-probe '/host-rootfs"+canary.getPath()+"'").put("timeout",5000)));
     if(childResult.getInt("exitCode")!=0||!childResult.getString("stdout").contains("CHILD_PATH_POLICY_OK"))throw new Exception("Child-process boundary check failed: "+childResult.toString());
