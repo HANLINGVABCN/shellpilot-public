@@ -26,6 +26,7 @@ pub struct TermSession {
     pub input_tx: mpsc::UnboundedSender<InputMsg>,
     pub handle: StdMutex<Option<russh::client::Handle<crate::ssh::ClientHandler>>>,
     pub dead: AtomicBool,
+    pub integration: StdMutex<Option<String>>,
 }
 
 pub fn session_broadcast(s: &TermSession, msg: &Value) {
@@ -64,6 +65,7 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
         input_tx,
         handle: StdMutex::new(None),
         dead: AtomicBool::new(false),
+        integration: StdMutex::new(None),
     });
     st.sessions.lock().await.insert(sid.to_string(), session.clone());
     session_broadcast(&session, &json!({ "type": "status", "sessionId": sid, "hostId": host_id, "state": "connecting" }));
@@ -71,16 +73,23 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
     let st_spawn = st.clone();
     let setup = async {
         let mut handle = crate::ssh::ssh_connect(&cfg).await?;
+        let shell_name=crate::ssh::ssh_exec(&mut handle,"printf '%s' \"$SHELL\"",3000).await.unwrap_or_default();
+        let token=crate::rand_id("terminal");
+        let bootstrap=crate::terminal_history::bootstrap(shell_name.trim(),&token);
+        if bootstrap.is_some(){*session.integration.lock().unwrap()=Some(token.clone());}
         let mut shell: Channel<russh::client::Msg> =
             open_shell(&mut handle, 120, 30).await?;
+        if let Some(bootstrap)=&bootstrap{shell.data(bootstrap.as_bytes()).await.map_err(|error|crate::ssh::SshError::new(error.to_string(),crate::ssh::ErrKind::Other))?;}
 
         // 输出泵：channel.wait() → scrollback + 会话广播；输入命令 → 写入/resize
         let s2 = session.clone();
         let sid2 = sid.to_string();
         let hid2 = host_id.to_string();
         tokio::spawn(async move {
+            let mut decoder=crate::terminal_history::Stream::new(bootstrap.as_ref().map(|_|token.as_str()));
             loop {
                 tokio::select! {
+                    _=tokio::time::sleep(std::time::Duration::from_secs(5)),if decoder.waiting=>{decoder.waiting=false;let _=shell.data(b"\r".as_slice()).await;},
                     input = input_rx.recv() => {
                         match input {
                             Some(InputMsg::Data(bytes)) => {
@@ -94,15 +103,10 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
                     }
                     msg = shell.wait() => {
                         match msg {
-                            Some(ChannelMsg::Data { ref data }) => {
-                                let text = String::from_utf8_lossy(data).to_string();
-                                push_scrollback(&s2, &text);
-                                session_broadcast(&s2, &json!({ "type": "term-data", "sessionId": sid2, "hostId": hid2, "data": text }));
-                            }
-                            Some(ChannelMsg::ExtendedData { ref data, .. }) => {
-                                let text = String::from_utf8_lossy(data).to_string();
-                                push_scrollback(&s2, &text);
-                                session_broadcast(&s2, &json!({ "type": "term-data", "sessionId": sid2, "hostId": hid2, "data": text }));
+                            Some(ChannelMsg::Data { ref data })|Some(ChannelMsg::ExtendedData { ref data, .. }) => {
+                                let(text,histories)=decoder.feed(data);
+                                if !text.is_empty(){push_scrollback(&s2, &text);session_broadcast(&s2, &json!({ "type": "term-data", "sessionId": sid2, "hostId": hid2, "data": text }));}
+                                for history in histories{if let Ok(commands)=crate::terminal_history::merge(&hid2,&history){st_spawn.broadcast_all(&json!({"type":"terminal-history","hostId":hid2,"commands":commands}));}}
                             }
                             Some(ChannelMsg::ExitStatus { .. }) | Some(ChannelMsg::Eof) => {}
                             Some(ChannelMsg::Close) | None => break,
@@ -115,7 +119,8 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
             let st2 = st_spawn.clone();
             let sid3 = sid2.clone();
             tokio::spawn(async move {
-                destroy_session(&st2, &sid3, "SSH 会话已结束").await;
+                let current=st2.sessions.lock().await.get(&sid3).is_some_and(|current|Arc::ptr_eq(current,&s2));
+                if current{destroy_session(&st2, &sid3, "SSH 会话已结束").await;}
             });
         });
 
@@ -144,6 +149,7 @@ async fn create_session(st: Arc<AppState>, sid: &str, host_id: &str) -> Result<A
                 "hostId": host_id,
                 "state": "connected",
                 "os": session.os_info.lock().unwrap().clone()
+                ,"shellIntegration":session.integration.lock().unwrap().clone()
             }),
         );
         crate::append_audit(json!({
@@ -193,7 +199,7 @@ pub async fn ensure_session(
     }
     let Some(s) = st.sessions.lock().await.get(sid).cloned() else { return };
     let state = if s.ready.load(Ordering::SeqCst) { "connected" } else { "connecting" };
-    send(json!({ "type": "status", "sessionId": sid, "hostId": host_id, "state": state, "os": s.os_info.lock().unwrap().clone() }));
+    send(json!({ "type": "status", "sessionId": sid, "hostId": host_id, "state": state, "os": s.os_info.lock().unwrap().clone(),"shellIntegration":s.integration.lock().unwrap().clone() }));
     send(json!({ "type": "term-replay", "sessionId": sid, "hostId": host_id, "data": s.scrollback.lock().unwrap().clone() }));
     send(json!({
         "type": "metrics-batch",

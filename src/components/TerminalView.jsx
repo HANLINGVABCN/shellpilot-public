@@ -3,6 +3,8 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { ws } from '../ws.js';
+import {api} from '../api.js';
+import {attachTerminalHistory} from '../terminal-history.js';
 
 // 每个终端会话一个实例；session = { id, hostId, title }
 const connectedPrinted = new Set();
@@ -12,6 +14,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const fitFrame = useRef(null);
+  const historyRef=useRef(null);
 
   // 右键菜单
   const [menu, setMenu] = useState(null);
@@ -25,6 +28,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
 
   const sendInput = (data) => {
     if (!session?.id) return;
+    historyRef.current?.input(data);
     ws.send({ type: 'term-input', sessionId: session.id, data });
   };
 
@@ -33,6 +37,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     const sid = session.id;
     const hostId = session.hostId;
     const term = new Terminal({
+      allowProposedApi: true,
       fontSize: 13,
       fontFamily: 'Consolas, "Courier New", monospace',
       cursorBlink: true,
@@ -51,6 +56,8 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     term.open(ref.current);
     termRef.current = term;
     fitRef.current = fit;
+    const history=attachTerminalHistory(term,ref.current,{send:sendInput});historyRef.current=history;
+    let historyLive=true;api('/terminal/history?host='+encodeURIComponent(hostId)).then(value=>{if(historyLive)history.setCommands(value.commands);}).catch(()=>{});
 
     // 选中即自动复制到系统剪贴板
     term.onSelectionChange(() => {
@@ -75,7 +82,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
           return false;
         }
       }
-      return true;
+      return history.key(ev);
     });
 
     const initCwd = pendingCwd;
@@ -88,11 +95,14 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     const offs = [
       ws.on('term-data', (m) => { if (m.sessionId === sid) term.write(m.data); }),
       ws.on('term-replay', (m) => {
-        if (m.sessionId === sid && m.data) { term.reset(); term.write(m.data); }
+        if (m.sessionId === sid && m.data) { history.reset();term.reset(); term.write(m.data); }
       }),
+      ws.on('terminal-history',m=>{if(m.hostId===hostId)history.setCommands(m.commands);}),
+      ws.on('_close',()=>history.reset()),
       ws.on('status', (m) => {
         if (m.sessionId !== sid) return;
         if (m.state === 'connected') {
+          history.setToken(m.shellIntegration);
           lastErr = '';
           if (needReset) {
             needReset = false;
@@ -103,18 +113,21 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
             term.write('\x1b[32m✓ 已连接\x1b[0m' + (m.os ? '  ' + String(m.os).replace(/\n/g, ' · ') : '') + '\r\n\r\n');
           }
         } else if (m.state === 'error') {
+          history.reset();
           needReset = true;
           if (m.message !== lastErr) {
             lastErr = m.message;
             term.write('\r\n\x1b[31m✗ ' + (m.message || '连接失败') + '\x1b[0m\r\n\r\n');
           }
         } else if (m.state === 'host-key-required') {
+          history.reset();
           needReset = true;
           if (m.message !== lastErr) {
             lastErr = m.message;
             term.write('\r\n\x1b[33m● ' + m.message + '\x1b[0m\r\n\r\n');
           }
         } else if (m.state === 'closed') {
+          history.reset();
           needReset = true;
           if (m.message !== lastErr) {
             lastErr = m.message;
@@ -153,6 +166,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     document.fonts?.ready.then(() => { if (live) scheduleFit(); });
 
     return () => {
+      historyLive=false;history.dispose();historyRef.current=null;
       offs.forEach((f) => f());
       ro.disconnect();
       live = false;

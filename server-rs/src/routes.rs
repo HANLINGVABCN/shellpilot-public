@@ -1304,6 +1304,7 @@ pub fn router(st: App) -> Router {
         .route("/api/mcp/test", post(mcp_test))
         .route("/api/ssh/host-keys", get(ssh_keys))
         .route("/api/ssh/trust", post(ssh_trust))
+        .route("/api/terminal/history",get(crate::terminal_history::list))
         .route("/api/agent/status", get(agent_status))
         .route("/api/memories",get(memories_list).post(memories_create))
         .route("/api/memories/batch",post(memories_batch))

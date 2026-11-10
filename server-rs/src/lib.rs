@@ -11,6 +11,7 @@ pub mod ai; pub use ai::*;
 pub mod ssh; pub use ssh::*;
 pub mod pool; pub use pool::*;
 pub mod sessions; pub use sessions::*;
+pub mod terminal_history;
 pub mod probe; pub use probe::*;
 pub mod approvals; pub use approvals::*;
 pub mod judge; pub use judge::*;
