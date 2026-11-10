@@ -36,4 +36,12 @@ try{
  attach('slow-cancel','cancelled');await new Promise(resolve=>setTimeout(resolve,40));send({type:'detach',sessionId:'cancelled'});await new Promise(resolve=>setTimeout(resolve,1700));assert(!connected('cancelled'),'Closed tab reappeared after its handshake');
  send({type:'term-input',sessionId:'ready',data:'FINAL_ECHO'});await until(()=>outputs.get('ready')?.includes('FINAL_ECHO'));
  console.log('PASS: active PTY input is independent of slow connects and metadata; first echo='+Math.round(echoMs)+'ms, maximum='+Math.round(Math.max(...samples))+'ms; different sessions connect concurrently, duplicate/cancelled attaches remain correct');
-}finally{socket?.close();for(const timer of timers)clearTimeout(timer);for(const client of clients)client.end();ssh.close();if(server?.exitCode===null){const exited=once(server,'exit');server.kill();await exited;}fs.rmSync(root,{recursive:true,force:true});}
+}finally{
+ socket?.close();for(const timer of timers)clearTimeout(timer);
+ // Fixtures own these sockets; force their closure after all echo assertions.
+ // Graceful disconnect can leave a paused Windows test socket alive until keepalive.
+ for(const client of clients){client.end();client._sock?.destroy();}
+ ssh.close();
+ if(server?.exitCode===null){const exited=once(server,'exit');server.kill();await exited;}
+ fs.rmSync(root,{recursive:true,force:true});
+}
