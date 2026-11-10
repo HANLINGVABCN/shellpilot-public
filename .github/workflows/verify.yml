@@ -24,6 +24,7 @@ jobs:
       - run: cargo test --manifest-path server-rs/Cargo.toml --lib workspace
       - run: node scripts/verify-workspace-windows.mjs
       - run: node scripts/verify-backup.mjs
+      - run: node scripts/verify-terminal-latency.mjs
   windows-reading:
     runs-on: windows-latest
     timeout-minutes: 15

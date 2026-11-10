@@ -16,7 +16,7 @@ const ssh=new ssh2.Server({hostKeys:[fs.readFileSync(key)]},client=>{
 try{
  ssh.listen(0,'127.0.0.1');await once(ssh,'listening');const ids=['ready','slow','parallel','metadata','slow-cancel'];
  fs.writeFileSync(path.join(root,'hosts.json'),JSON.stringify(ids.map(id=>({id,name:'Fixture '+id,host:'127.0.0.1',port:ssh.address().port,username:id}))));
- server=spawn(path.resolve('server-rs/target/debug/shellpilot-server'),[],{env:{...process.env,SHELLPILOT_DATA:root,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
+ server=spawn(path.resolve('server-rs/target/debug/shellpilot-server'+(process.platform==='win32'?'.exe':'')),[],{env:{...process.env,SHELLPILOT_DATA:root,SHELLPILOT_PORT:'0',SHELLPILOT_OPEN:'0'},stdio:['ignore','pipe','inherit']});
  const base=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Backend timeout')),15000);server.stdout.on('data',data=>{const match=data.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(match){clearTimeout(timer);resolve(match[0]);}});});
  const events=[],outputs=new Map();socket=new WebSocket(base.replace('http:','ws:')+'/ws');socket.onmessage=event=>{const message=JSON.parse(event.data);events.push({...message,received:performance.now()});if(['term-data','term-replay'].includes(message.type))outputs.set(message.sessionId,(outputs.get(message.sessionId)||'')+message.data);};await once(socket,'open');
  const send=message=>socket.send(JSON.stringify(message));const attach=(id,sessionId=id)=>send({type:'attach',hostId:id,sessionId});
@@ -36,4 +36,4 @@ try{
  attach('slow-cancel','cancelled');await new Promise(resolve=>setTimeout(resolve,40));send({type:'detach',sessionId:'cancelled'});await new Promise(resolve=>setTimeout(resolve,1700));assert(!connected('cancelled'),'Closed tab reappeared after its handshake');
  send({type:'term-input',sessionId:'ready',data:'FINAL_ECHO'});await until(()=>outputs.get('ready')?.includes('FINAL_ECHO'));
  console.log('PASS: active PTY input is independent of slow connects and metadata; first echo='+Math.round(echoMs)+'ms, maximum='+Math.round(Math.max(...samples))+'ms; different sessions connect concurrently, duplicate/cancelled attaches remain correct');
-}finally{socket?.close();server?.kill();for(const timer of timers)clearTimeout(timer);for(const client of clients)client.end();ssh.close();fs.rmSync(root,{recursive:true,force:true});}
+}finally{socket?.close();for(const timer of timers)clearTimeout(timer);for(const client of clients)client.end();ssh.close();if(server?.exitCode===null){const exited=once(server,'exit');server.kill();await exited;}fs.rmSync(root,{recursive:true,force:true});}
