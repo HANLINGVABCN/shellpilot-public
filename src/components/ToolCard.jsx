@@ -1,5 +1,5 @@
 import React,{useId,useState} from 'react';
-const names={get_metrics:'读取性能指标',vps_exec:'执行命令',exec_command:'执行命令',vps_exec_batch:'批量执行查询',vps_metrics:'读取性能指标',vps_metrics_batch:'批量读取指标',vps_diagnose:'系统诊断',vps_logs:'查询日志',vps_read_file:'读取文件',vps_write_file:'预览或修改文件',vps_list:'机器列表',remember_memory:'保存记忆'};
+const names={get_metrics:'读取性能指标',vps_exec:'执行命令',exec_command:'执行命令',vps_exec_batch:'批量执行命令',vps_metrics:'读取性能指标',vps_metrics_batch:'批量读取指标',vps_diagnose:'系统诊断',vps_logs:'查询日志',vps_read_file:'读取文件',vps_write_file:'预览或修改文件',vps_list:'机器列表',remember_memory:'保存记忆'};
 export default function ToolCard({part}){
   const [expanded,setExpanded]=useState(false);const id=useId();
   let result;try{result=JSON.parse(part.result);}catch{}

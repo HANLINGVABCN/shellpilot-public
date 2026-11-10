@@ -153,7 +153,7 @@ pub fn schemas() -> Vec<Value> {
     };
     add("vps_list", "列出已授权主机，不包含凭据；优先使用返回的 ID", json!({}), vec![]);
     add("vps_exec", "执行命令，返回退出码、stdout、stderr和截断状态。修改操作受权限策略控制", json!({"host":host,"command":{"type":"string"},"timeout":{"type":"integer","minimum":1,"maximum":600},"maxOutput":{"type":"integer","minimum":1024,"maximum":65536}}), vec!["host","command"]);
-    add("vps_exec_batch", "并行执行独立的只读命令，最多16条、4个并发，减少往返；写操作必须单独执行", json!({"commands":{"type":"array","maxItems":16,"minItems":1,"items":{"type":"object","properties":{"host":host,"command":{"type":"string"},"timeout":{"type":"integer"}},"required":["host","command"],"additionalProperties":false}}}), vec!["commands"]);
+    add("vps_exec_batch", "并行执行独立命令，最多16条、4个并发；与单条执行共用当前权限和命令黑名单，无额外白名单。支持组合命令和修改操作，依赖前一步结果的操作应分开执行；结果保持输入顺序", json!({"commands":{"type":"array","maxItems":16,"minItems":1,"items":{"type":"object","properties":{"host":host,"command":{"type":"string"},"timeout":{"type":"integer","minimum":1,"maximum":600},"maxOutput":{"type":"integer","minimum":1024,"maximum":65536}},"required":["host","command"],"additionalProperties":false}}}), vec!["commands"]);
     add("vps_read_file", "分页读取文本文件，返回内容、偏移、截断标记及完整文件哈希；不要读取凭据", json!({"host":host,"path":{"type":"string"},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":65536}}), vec!["host","path"]);
     add("vps_write_file", "先预览 before/after 和 expectedHash；确认后传 preview=false、expectedHash。自动备份、原子替换并校验", json!({"host":host,"path":{"type":"string"},"content":{"type":"string","maxLength":65536},"preview":{"type":"boolean","default":true},"expectedHash":{"type":"string"}}), vec!["host","path","content"]);
     add("vps_metrics", "获取指定主机的实时性能指标", json!({"host":host}), vec!["host"]);

@@ -60,7 +60,7 @@ SHELLPILOT_DATA = 'C:\Users\YOUR_NAME\AppData\Roaming\ShellPilot'
 | --- | --- | --- |
 | `vps_list` | 获取授权主机 ID | 不返回密码、私钥等字段 |
 | `vps_exec` | 执行一条远端命令 | 超时 1–600 秒；输出最多 64 KiB，带截断标记 |
-| `vps_exec_batch` | 合并独立的只读查询 | 最多 16 条，4 个并发；返回顺序与输入一致 |
+| `vps_exec_batch` | 并行执行独立命令 | 最多16条、4个并发；与单条执行共用权限和黑名单，无额外白名单，返回顺序与输入一致 |
 | `vps_metrics` | 查询单台指标 | 可复用主窗口最近 10 秒的采样 |
 | `vps_metrics_batch` | 比较多机性能 | 最多 16 台；省略主机数组使用授权范围 |
 | `vps_diagnose` | 一次收集故障证据 | Linux 的系统、CPU、内存、磁盘、网络和服务诊断 |

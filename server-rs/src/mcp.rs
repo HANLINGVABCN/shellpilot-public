@@ -51,8 +51,14 @@ async fn execute(st: Arc<crate::AppState>, name: &str, args: &Value) -> Result<V
             }
         }
     }
+    let batch_requires_approval = if name=="vps_exec_batch" {
+        let commands=args["commands"].as_array().ok_or("缺少 commands 数组")?;
+        commands.iter().map(|args|crate::operations::text_arg(args,"command").map(|command|crate::safety::safety_check(command).mode!="auto"))
+            .collect::<Result<Vec<_>,_>>()?.into_iter().any(|required|required)
+    } else { false };
     let writes = name=="vps_write_file" && args["preview"].as_bool()==Some(false)
-        || name=="vps_exec" && crate::safety::safety_check(crate::operations::text_arg(args,"command")?).mode!="auto";
+        || name=="vps_exec" && crate::safety::safety_check(crate::operations::text_arg(args,"command")?).mode!="auto"
+        || batch_requires_approval;
     if writes && ["ask","ai"].contains(&ctx.mode.as_str()) { return Err("此操作需要审批，请打开 ShellPilot 主窗口后重试".into()); }
     ctx.call(name,args).await
 }
@@ -106,7 +112,7 @@ pub async fn mcp_stdio_loop() {
             "ping"=>send_json(&json!({"jsonrpc":"2.0","id":id,"result":{}})),
             "tools/list"=>{
                 let tools:Vec<Value>=crate::operations::schemas().into_iter().map(|mut tool| {
-                    let write=["vps_exec","vps_write_file"].contains(&tool["name"].as_str().unwrap_or(""));
+                    let write=["vps_exec","vps_exec_batch","vps_write_file"].contains(&tool["name"].as_str().unwrap_or(""));
                     tool["annotations"]=json!({"readOnlyHint":!write,"destructiveHint":write,"openWorldHint":true});
                     tool["outputSchema"]=json!({"type":"object","properties":{"result":{}},"required":["result"]});
                     tool

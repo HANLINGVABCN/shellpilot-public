@@ -16,19 +16,29 @@ impl ToolContext {
         op::resolve_host(&self.st.hosts.read().await, &self.scope, query)
     }
 
-    async fn authorize(&self, host: &Value, command: &str, preview: Option<Value>) -> Result<Value, String> {
+    fn check_command_policy(&self, host: &Value, command: &str) -> Result<crate::safety::Check, String> {
         let check = crate::safety::safety_check(command);
+        let reason = if check.mode == "block" && self.mode != "full" {
+            Some(format!("命令被本地策略拦截：{}", check.reason))
+        } else if self.mode == "readonly" && check.mode != "auto" {
+            Some("只读模式禁止修改操作".into())
+        } else { None };
+        if let Some(reason) = reason {
+            crate::append_audit(json!({"ts":crate::now_ms(),"source":self.source,"hostId":host["id"],
+                "host":host["name"],"command":command,"action":"blocked","reason":reason}));
+            return Err(reason);
+        }
+        Ok(check)
+    }
+
+    async fn authorize(&self, host: &Value, command: &str, preview: Option<Value>) -> Result<Value, String> {
+        let check = self.check_command_policy(host, command)?;
         let hid = host["id"].as_str().unwrap_or("");
         let name = host["name"].as_str().unwrap_or(hid);
         let audit = |action: &str, reason: &str| crate::append_audit(json!({
             "ts": crate::now_ms(), "source": self.source, "hostId": hid, "host": name,
             "command": command, "action": action, "reason": reason }));
-        if check.mode == "block" && self.mode != "full" {
-            audit("blocked", &check.reason);
-            return Err(format!("命令被本地策略拦截：{}", check.reason));
-        }
         let key = format!("{hid}\n{command}");
-        if self.mode == "readonly" && check.mode != "auto" { audit("blocked", "只读模式"); return Err("只读模式禁止修改操作".into()); }
         let remembered = self.st.agent.lock().await.allowed.contains(&key);
         if check.mode == "auto" || remembered || self.mode == "auto" || self.mode == "full" {
             audit("allowed", &self.mode);
@@ -64,6 +74,20 @@ impl ToolContext {
         Ok(json!({"decision":"allow","by":"user"}))
     }
 
+    async fn exec_authorized(&self, host: &Value, args: &Value, approval: Value) -> Result<Value, String> {
+        let hid = host["id"].as_str().unwrap_or("");
+        let command = op::text_arg(args, "command")?;
+        let timeout = args.get("timeout").and_then(Value::as_u64).unwrap_or(60).clamp(1, 600);
+        let limit = args.get("maxOutput").and_then(Value::as_u64).unwrap_or(16*1024) as usize;
+        let mut result = serde_json::to_value(crate::pool::exec_result(&self.st, hid, command, timeout * 1000, limit).await?).map_err(|e|e.to_string())?;
+        result["approval"] = approval;
+        result["hostId"] = host["id"].clone();
+        result["host"] = host["name"].clone();
+        crate::append_audit(json!({"ts":crate::now_ms(),"source":self.source,"hostId":hid,"host":host["name"],
+            "tool":"vps_exec","action":"exec","exitCode":result["exitCode"],"durationMs":result["durationMs"],"command":command}));
+        Ok(result)
+    }
+
     pub async fn call(&self, name: &str, args: &Value) -> Result<Value, String> {
         if name.starts_with("workspace_"){
             if self.source!="ai"{return Err("工作区目前只供本机应用协作，未授权给外部MCP".into());}
@@ -88,15 +112,26 @@ impl ToolContext {
             "vps_exec_batch" => {
                 let commands = args.get("commands").and_then(Value::as_array).ok_or("缺少 commands 数组")?;
                 if commands.is_empty() || commands.len() > 16 { return Err("批量命令数量应为 1–16".into()); }
-                // Validate the entire batch before starting any operation.
-                for command in commands {
-                    let cmd = op::text_arg(command, "command")?;
-                    if crate::safety::safety_check(cmd).mode != "auto" { return Err("批量执行仅支持只读白名单命令；修改命令请单独执行".into()); }
-                    self.host(op::text_arg(command, "host")?).await?;
+                // Use the single-command policy. Validate every target and policy
+                // first, then authorize the whole batch before executing its commands.
+                let mut validated = Vec::with_capacity(commands.len());
+                for args in commands {
+                    let command = op::text_arg(args, "command")?;
+                    let host = self.host(op::text_arg(args, "host")?).await?;
+                    self.check_command_policy(&host, command)?;
+                    validated.push((host, args.clone()));
                 }
-                let mut results = stream::iter(commands.clone().into_iter().enumerate().map(|(index, args)| async move {
-                    let result = Box::pin(self.call("vps_exec", &args)).await;
-                    (index, match result { Ok(value) => value, Err(error) => json!({"error":error}) })
+                let mut authorized = Vec::with_capacity(validated.len());
+                for (host, args) in validated {
+                    let approval = self.authorize(&host, op::text_arg(&args, "command")?, None).await?;
+                    authorized.push((host, args, approval));
+                }
+                let mut results = stream::iter(authorized.into_iter().enumerate().map(|(index, (host, args, approval))| async move {
+                    let result = self.exec_authorized(&host, &args, approval).await;
+                    (index, match result {
+                        Ok(mut value) => { value["command"] = args["command"].clone(); value },
+                        Err(error) => json!({"hostId":host["id"],"host":host["name"],"command":args["command"],"error":error})
+                    })
                 })).buffer_unordered(4).collect::<Vec<_>>().await;
                 results.sort_by_key(|(i, _)| *i);
                 return Ok(json!({"results":results.into_iter().map(|(_,v)|v).collect::<Vec<_>>()}));
@@ -123,11 +158,7 @@ impl ToolContext {
             "vps_exec" | "exec_command" => {
                 let command = op::text_arg(args, "command")?;
                 let approval = self.authorize(&host, command, None).await?;
-                let timeout = args.get("timeout").and_then(Value::as_u64).unwrap_or(60).clamp(1, 600);
-                let limit = args.get("maxOutput").and_then(Value::as_u64).unwrap_or(16*1024) as usize;
-                let mut result = serde_json::to_value(crate::pool::exec_result(&self.st, hid, command, timeout * 1000, limit).await?).map_err(|e|e.to_string())?;
-                result["approval"] = approval;
-                result
+                return self.exec_authorized(&host, args, approval).await;
             }
             "vps_read_file" => op::read_file(&self.st, hid, args).await?,
             "vps_write_file" => {

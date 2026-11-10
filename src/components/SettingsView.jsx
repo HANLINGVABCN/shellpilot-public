@@ -530,7 +530,7 @@ export default function SettingsView() {
             {!s.mcpReadOnly && s.mcpApprovalMode==='full' && <div className="menu-note">完全托管已开启：授权机器上的修改、删除等命令直接执行，不再请求审批。修改范围仍由下方机器选择控制。</div>}
             <label style={{marginTop:12}}>允许外部 AI 操作的机器</label>
             <div className="mcp-hosts">{mcpHosts.map((host) => <label key={host.id}><input type="checkbox" checked={!Array.isArray(s.mcpHostIds) || s.mcpHostIds.includes(host.id)} onChange={(e) => { const ids = Array.isArray(s.mcpHostIds) ? s.mcpHostIds : mcpHosts.map((h) => h.id); save({...s,mcpHostIds:e.target.checked ? [...ids,host.id] : ids.filter((id) => id !== host.id)}); }} /><span title={host.name}>{host.name}</span></label>)}</div>
-            <div className="menu-note">内置 AI 与 MCP 共用 9 个工具：批量查询、系统诊断、日志、文件预览与安全修改。人工审批需要主窗口保持运行。</div>
+            <div className="menu-note">内置 AI 与 MCP 共用 9 个工具：批量执行、系统诊断、日志、文件预览与安全修改。批量执行沿用所选权限，人工审批需要主窗口保持运行。</div>
           </div>
         ) : (
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>

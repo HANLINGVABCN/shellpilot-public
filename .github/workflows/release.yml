@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261109-backup-options'
+        default: 'build-20261110-batch-policy'
       title:
         description: 'Release title'
         required: true
@@ -80,19 +80,16 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：服务器、AI提供商、对话记录和记忆独立备份。
+          ShellPilot：批量命令统一使用当前执行权限。
 
-          - 导出增加选择弹窗，支持服务器、AI提供商、对话记录、记忆四类，并提供全选／取消全选。
-          - 导入先检测文件并显示各类数量，再弹出选择；缺少的类别置灰不可选，全选仅选择文件中存在的数据。
-          - 导入初始不勾选，服务器和AI提供商还可继续逐项挑选。对话、记忆可以单独导入，不再自动跟随其他类别。
-          - 合并保留现有内容；覆盖仅替换勾选的类别，未勾选的服务器、AI配置、对话及记忆文件不写入。
-          - 单独导出对话不附带服务器密码、私钥或AI API Key；导入时按服务器身份匹配，未匹配的历史保留到全局对话，不自动添加服务器。
-          - 记忆保留各自的启停状态，AI提供商导入保留本机MCP及自动记忆开关。
-          - 继续使用现有加密.spex格式，兼容旧备份，保留应用数据目录和永久安卓签名。
+          - 删除批量执行专用的只读白名单，组合查询、分号、管道和重定向不会再被批量工具额外拦截。
+          - 批量与单条执行共用当前权限、命令黑名单和授权服务器范围，自动执行及完全托管支持批量修改操作。
+          - 批量先校验全部目标并完成授权，再最多4个并发执行。结果保持输入顺序，包含命令、主机、退出码及各条错误。
+          - 内置AI和MCP使用相同逻辑；更新工具说明及MCP能力标记。独立MCP遇到需要审批的批量会立即提示打开主窗口。
+          - 有先后依赖或操作同一文件、同一服务的命令仍按顺序分开执行。
+          - 主机、聊天、记忆、工作区和选择备份功能保留，数据目录与永久安卓签名保持现有设置。
 
-          文件管理、终端、工作区小标签、AI及MCP等功能继续保留。全部构建和测试在GitHub完成。
-
-          Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。
+          全部构建和运行验收在GitHub完成。Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。
 
           发布直接复制通过检查的安装包，不重复编译或重新签名。
           NOTES
