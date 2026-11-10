@@ -165,6 +165,9 @@ jobs:
         run: |
           npm run tauri -- icon build/icon.png
           node scripts/set-icon-background.mjs
+      - run: node scripts/prepare-android-workspace.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: node scripts/patch-android.mjs
       - run: npm run tauri -- android build --apk --target aarch64
       - name: Sign and verify APK with permanent ShellPilot key
