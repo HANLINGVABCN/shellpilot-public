@@ -1,0 +1,15 @@
+{
+  "tag": "linux-alpine-3.24.4-integrated-v1",
+  "packages": {
+    "aarch64": {
+      "file": "ShellPilot-Android-Native-aarch64.tar.gz",
+      "bytes": 141517,
+      "sha256": "79d29f2e5e6f1c5d551a558d4a714672d9ff31c3b58dcc2276ca2f99fccb5d94"
+    },
+    "x86_64": {
+      "file": "ShellPilot-Android-Native-x86_64.tar.gz",
+      "bytes": 144495,
+      "sha256": "8af8022053a8894b589fbf9fa9fc6a907f2bb018954da128dcd32b4f0db3b8d6"
+    }
+  }
+}

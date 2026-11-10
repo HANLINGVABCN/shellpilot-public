@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261110-mcp-lifecycle'
+        default: 'build-20261110-android-integrated'
       title:
         description: 'Release title'
         required: true
@@ -80,16 +80,19 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：MCP连接与主窗口重启、更新分开运行。
+          ShellPilot：安卓工作区合并到主应用。
 
-          - Windows自动生成经过SHA256校验的独立MCP运行副本，按版本哈希保存，更新主程序不会覆盖客户端正在使用的EXE。
-          - MCP读取当前主窗口认证；认证轮换并在执行前被拒绝时刷新重试，主窗口关闭不关闭MCP标准输入输出进程。
-          - 执行中断未收到结果时不会自动重放修改命令，下一次调用仍可以继续。
-          - 验证同一个MCP进程跨多次主窗口重启、认证轮换和实际覆盖安装，权限关闭及主机范围继续生效。
-          - 第一次从旧启动路径切换到独立MCP路径需要客户端重新加载配置，后续无需因主窗口重启而重启客户端。
-          - 保留主机、聊天、记忆、终端历史、工作区和四类备份，沿用数据目录及永久安卓签名。
+          - 安卓只安装ShellPilot主应用，不再安装第二个工作区APK。可信PRoot和PTY随主应用签名提供。
+          - 工作区页面下载、校验和解压Linux数据；ARM64首次4,029,843字节，提供固定下载镜像及SHA256校验。
+          - 文件管理在未下载Linux时也可使用，原文件管理、独立终端和配置小标签保持现有操作。
+          - 旧组件工作文件读取迁移，不删除旧组件或原文件；同名冲突不覆盖。损坏下载或解压失败保留原可用环境。
+          - 内置受限执行器限制真实路径、私人网络和危险系统调用。PRoot为Linux兼容环境，不等同完整虚拟机。
+          - Android10、Android15实际单应用运行及旧文件迁移检查通过，包括存在的主应用模拟凭据访问被拒绝、多个终端、文件和卸载保留。
+          - 主应用包名和永久安卓签名保留；Windows继续复用原QEMU与Alpine，不重新下载，MCP、主机、对话、记忆和备份保持现有设置。
 
-          全部构建与运行验收在GitHub进行。Windows使用ShellPilot-Windows-Setup.exe；安卓使用ShellPilot-arm64.apk。发布复用已验收安装包，不重复编译或重新签名。
+          手机更新ShellPilot-arm64.apk，然后在工作区配置点击安装Linux环境即可；不会打开额外应用安装界面。
+
+          全部构建与验收在GitHub进行，发布复用已验收安装包，不重复编译或重新签名。
           NOTES
           printf '\n验证构建：https://github.com/%s/actions/runs/%s\n构建源码：`%s`\n' "$GITHUB_REPOSITORY" "$BUILD_RUN" "$BUILD_SOURCE_SHA" >> release-notes.md
       - name: Publish release
