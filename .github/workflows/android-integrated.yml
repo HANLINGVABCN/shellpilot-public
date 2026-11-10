@@ -82,6 +82,8 @@ jobs:
           trap 'rm -f /tmp/integrated-signing.p12' EXIT
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -path '*release*' | head -1)
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks /tmp/integrated-signing.p12 --ks-key-alias shellpilot --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEYSTORE_PASSWORD --out runtime-build/ShellPilot-x86_64-test.apk "$apk"
+          export SIGNING_KEY_PATH=/tmp/integrated-signing.p12
+          bash scripts/build-integrated-test.sh
       - uses: actions/upload-artifact@v4
         with:
           name: integrated-main
@@ -89,6 +91,7 @@ jobs:
             runtime-build/ShellPilot-x86_64-test.apk
             runtime/manifest.json
             runtime-build/native/native-manifest.json
+            runtime-build/integrated-test/signed.apk
   device:
     needs: main
     runs-on: ubuntu-latest
@@ -120,3 +123,6 @@ jobs:
             adb install runtime-build/main/runtime-build/ShellPilot-x86_64-test.apk
             python3 scripts/verify-android-integrated.py
             WORKSPACE_TEST_URL=http://127.0.0.1:3738 node scripts/verify-workspace-terminals.mjs
+            adb install runtime-build/main/runtime-build/integrated-test/signed.apk
+            adb shell am instrument -w app.shellpilot.client.test/.IntegratedRuntimeTest | tee runtime-build/boundary-check.txt
+            grep -F 'PASS: main-app credential' runtime-build/boundary-check.txt

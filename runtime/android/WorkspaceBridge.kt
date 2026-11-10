@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.*
 import org.json.JSONObject
 import java.io.File
+import java.security.MessageDigest
 import android.provider.DocumentsContract
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -65,12 +66,54 @@ object WorkspaceBridge {
     else if(op=="import"||op=="export")descriptor=ParcelFileDescriptor.open(File(body.getString("localPath")),if(op=="import")ParcelFileDescriptor.MODE_READ_ONLY else ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_TRUNCATE)
     input.writeString(body.toString());input.writeInt(if(descriptor==null)0 else 1);descriptor?.writeToParcel(input,0)
     if(binder?.transact(1,input,output,0)!=true)throw IllegalStateException("Linux运行组件调用失败")
-    output.readException();output.readString()?:"{}"
+    output.readException();val value=JSONObject(output.readString()?:"{}")
+    if(op=="install"&&!value.has("error")){value.put("migratedFiles",migrateLegacy(activity))}
+    value.toString()
    }finally{descriptor?.close();input.recycle();output.recycle()}
   }finally{activity.unbindService(connection)}
  }catch(error:Exception){JSONObject().put("error",error.message?:"安卓工作区操作失败").toString()} }
  private fun invoke(activity:Activity,body:JSONObject):JSONObject{
   val value=JSONObject(request(activity,body.toString()));if(value.has("error"))throw IllegalStateException(value.getString("error"));return value
+ }
+ private fun legacy(activity:Activity,body:JSONObject,outputFile:File?=null):JSONObject{
+  val intent=Intent().setComponent(ComponentName("app.shellpilot.workspace","app.shellpilot.workspace.RuntimeService"))
+  val latch=CountDownLatch(1);var binder:IBinder?=null
+  val connection=object:ServiceConnection{override fun onServiceConnected(name:ComponentName,service:IBinder){binder=service;latch.countDown()};override fun onServiceDisconnected(name:ComponentName){binder=null}}
+  if(!activity.bindService(intent,connection,Context.BIND_AUTO_CREATE))throw IllegalStateException("旧工作区文件暂时无法读取，原文件保留")
+  try{if(!latch.await(8,TimeUnit.SECONDS))throw IllegalStateException("旧工作区连接超时，原文件保留")
+   val input=Parcel.obtain();val output=Parcel.obtain();var descriptor:ParcelFileDescriptor?=null
+   try{if(outputFile!=null)descriptor=ParcelFileDescriptor.open(outputFile,ParcelFileDescriptor.MODE_WRITE_ONLY or ParcelFileDescriptor.MODE_CREATE or ParcelFileDescriptor.MODE_TRUNCATE)
+    input.writeString(body.toString());input.writeInt(if(descriptor==null)0 else 1);descriptor?.writeToParcel(input,0)
+    if(binder?.transact(1,input,output,0)!=true)throw IllegalStateException("旧工作区文件读取失败，原文件保留")
+    output.readException();val result=JSONObject(output.readString()?:"{}");if(result.has("error"))throw IllegalStateException(result.getString("error"));return result
+   }finally{descriptor?.close();input.recycle();output.recycle()}
+  }finally{activity.unbindService(connection)}
+ }
+ private fun migrateLegacy(activity:Activity):Int{
+  val marker=File(activity.noBackupFilesDir,"legacy-workspace-migrated")
+  if(marker.exists())return 0
+  val present=try{activity.packageManager.getPackageInfo("app.shellpilot.workspace",0);true}catch(_:Exception){false}
+  if(!present)return 0
+  val directory=File(activity.filesDir,"workspace");var count=0
+  fun copy(path:String){
+   val items=legacy(activity,JSONObject().put("op","action").put("name","workspace_list").put("arguments",JSONObject().put("path",path))).getJSONArray("entries")
+   for(index in 0 until items.length()){
+    val item=items.getJSONObject(index);val name=item.getString("name");if(name.isEmpty()||name=="."||name==".."||name.contains('/')||name.contains('\\')||name.equals(".shellpilot",true))throw IllegalStateException("旧工作区包含无效路径，原文件保留")
+    val relative=if(path.isEmpty())name else "$path/$name"
+    val target=File(directory,relative)
+    if(!target.canonicalPath.startsWith(directory.canonicalPath+"/")||java.nio.file.Files.isSymbolicLink(target.toPath()))throw IllegalStateException("新工作区路径发生变化，原文件保留")
+    if(item.getBoolean("directory")){if(!target.exists())invoke(activity,JSONObject().put("op","action").put("name","workspace_mkdir").put("arguments",JSONObject().put("path",relative)));copy(relative)}
+    else{
+     val temp=File.createTempFile("legacy-",".tmp",File(activity.cacheDir,"workspace-migration").apply{mkdirs()})
+     try{legacy(activity,JSONObject().put("op","export").put("path",relative),temp)
+      fun hash(file:File):String{val digest=MessageDigest.getInstance("SHA-256");file.inputStream().use{input->val buffer=ByteArray(65536);while(true){val size=input.read(buffer);if(size<0)break;digest.update(buffer,0,size)}};return digest.digest().joinToString(""){"%02x".format(it)}}
+      if(target.exists()){if(target.isFile&&hash(target)==hash(temp))continue;throw IllegalStateException("新旧工作区文件冲突：$relative，原文件均已保留")}
+      invoke(activity,JSONObject().put("op","import").put("path",relative).put("localPath",temp.path));count++
+     }finally{temp.delete()}
+    }
+   }
+  }
+  copy("");marker.writeText("migrated");return count
  }
  private fun importTree(activity:Activity,tree:Uri,document:Uri,parent:String){
   val projection=arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME,DocumentsContract.Document.COLUMN_MIME_TYPE,DocumentsContract.Document.COLUMN_DOCUMENT_ID)

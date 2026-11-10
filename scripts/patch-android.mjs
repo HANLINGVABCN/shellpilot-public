@@ -101,6 +101,7 @@ if(fs.existsSync(mainFile)){
 let appManifest=fs.readFileSync(manifestXml,'utf8');
 appManifest=appManifest.replace(/<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\s*\/>/g,'').replace(/<provider[^>]*android:authorities="app.shellpilot.client.workspace-files"[^>]*>[\s\S]*?<\/provider>/g,'');
 if(!appManifest.includes('android.permission.FOREGROUND_SERVICE_SPECIAL_USE'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>\n<application`);
+if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="app.shellpilot.workspace.ACCESS"/><queries><package android:name="app.shellpilot.workspace"/></queries>\n<application`);
 if(!appManifest.includes('IntegratedWorkspaceService'))appManifest=appManifest.replace('</application>',`<service android:name=".IntegratedWorkspaceService" android:process=":workspace" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated local Linux workspace terminal and file tasks"/></service></application>`);
 appManifest=appManifest.replace(/android:extractNativeLibs="[^"]*"/,'android:extractNativeLibs="true"');
 if(!appManifest.includes('android:extractNativeLibs='))appManifest=appManifest.replace('<application','<application android:extractNativeLibs="true"');
