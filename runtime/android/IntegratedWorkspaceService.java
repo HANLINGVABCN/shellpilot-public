@@ -96,19 +96,23 @@ public final class IntegratedWorkspaceService extends Service {
   if(expected.length()!=64||expectedBytes<=0||expectedBytes>128L*1024*1024)throw new IOException("Linux文件清单无效");
   java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");long bytes=0;
   File temp=new File(getNoBackupFilesDir(),"linux-rootfs-"+UUID.randomUUID()+".tmp");
+  File staged=new File(getNoBackupFilesDir(),"linux-stage-"+UUID.randomUUID());File previous=new File(getNoBackupFilesDir(),"linux-previous-"+UUID.randomUUID());
   try{try(InputStream input=new FileInputStream(descriptor.getFileDescriptor());OutputStream output=new FileOutputStream(temp)){
     byte[] buffer=new byte[65536];int size;while((size=input.read(buffer))>=0){bytes+=size;if(bytes>expectedBytes)throw new IOException("Linux下载大小不匹配");digest.update(buffer,0,size);output.write(buffer,0,size);}
   }
   StringBuilder value=new StringBuilder();for(byte b:digest.digest())value.append(String.format("%02x",b&255));
   if(bytes!=expectedBytes||!value.toString().equals(expected))throw new IOException("Linux文件校验失败，请重新下载");
-  if(root.exists())deleteTree(root);root.mkdirs();
-  try(InputStream input=new java.util.zip.GZIPInputStream(new FileInputStream(temp))){extractRootfs(input);}
-  new File(root,"workspace").mkdirs();new File(root,"tmp").mkdirs();
-  try(OutputStream output=new FileOutputStream(new File(root,"etc/resolv.conf"))){output.write("nameserver 1.1.1.1\nnameserver 8.8.8.8\n".getBytes(StandardCharsets.UTF_8));}
-  if(archive.exists())archive.delete();if(!temp.renameTo(archive))throw new IOException("Linux文件保存失败");new File(root,".installed").createNewFile();
-  }catch(Exception error){if(root.exists())deleteTree(root);throw error;}finally{temp.delete();}
+  staged.mkdirs();
+  try(InputStream input=new java.util.zip.GZIPInputStream(new FileInputStream(temp))){extractRootfs(input,staged);}
+  new File(staged,"workspace").mkdirs();new File(staged,"tmp").mkdirs();
+  try(OutputStream output=new FileOutputStream(new File(staged,"etc/resolv.conf"))){output.write("nameserver 1.1.1.1\nnameserver 8.8.8.8\n".getBytes(StandardCharsets.UTF_8));}
+  new File(staged,".installed").createNewFile();
+  if(root.exists()&&!root.renameTo(previous))throw new IOException("原Linux环境暂时无法保存");
+  if(!staged.renameTo(root)){if(previous.exists())previous.renameTo(root);throw new IOException("Linux环境切换失败，原环境保留");}
+  if(previous.exists())deleteTree(previous);if(archive.exists())archive.delete();temp.renameTo(archive);
+  }finally{temp.delete();if(staged.exists())deleteTree(staged);}
  }}
- private void extractRootfs(InputStream in)throws Exception{
+ private void extractRootfs(InputStream in,File root)throws Exception{
   byte[] header=new byte[512],buffer=new byte[65536];long total=0;String longName=null;
   while(true){int used=0;while(used<512){int n=in.read(header,used,512-used);if(n<0)throw new IOException("Linux压缩包被截断");used+=n;}boolean empty=true;for(byte b:header)if(b!=0){empty=false;break;}if(empty)break;
    String name=longName!=null?longName:tarText(header,0,100);longName=null;String prefix=tarText(header,345,155);if(!prefix.isEmpty())name=prefix+"/"+name;

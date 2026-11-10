@@ -1,7 +1,8 @@
 """Actual main-app API; no companion APK or package-installer interaction."""
-import subprocess,time,json,urllib.request,urllib.error
+import subprocess,time,json,urllib.request,urllib.error,os
 subprocess.run(['adb','forward','tcp:3738','tcp:3737'],check=True)
-assert 'package:app.shellpilot.workspace' not in subprocess.check_output(['adb','shell','pm','list','packages','app.shellpilot'],text=True)
+legacy=os.environ.get('SHELLPILOT_LEGACY_TEST')=='1'
+if not legacy:assert 'package:app.shellpilot.workspace' not in subprocess.check_output(['adb','shell','pm','list','packages','app.shellpilot'],text=True)
 subprocess.run(['adb','shell','am','start','-n','app.shellpilot.client/.MainActivity'],check=True)
 base='http://127.0.0.1:3738/api'
 def api(route,method='GET',body=None):
@@ -32,9 +33,13 @@ while True:
     if time.time()>deadline:raise RuntimeError('Integrated rootfs installation timeout '+str(state))
     time.sleep(.4)
 packages=subprocess.check_output(['adb','shell','pm','list','packages','app.shellpilot'],text=True)
-assert 'package:app.shellpilot.workspace' not in packages
-print('PASS: only main APK installed; Linux rootfs downloads and extracts without package-installer activity')
+if not legacy:assert 'package:app.shellpilot.workspace' not in packages
+print('PASS: Linux rootfs downloads and extracts without package-installer activity or installing another app')
 def action(name,args):return api('/workspace/action','POST',{'name':name,'arguments':args})
+if legacy:
+    assert action('workspace_read',{'path':'answer.txt'})['content']=='generated'
+    assert action('workspace_read',{'path':'input.txt'})['content']=='fixture input'
+    print('PASS: existing companion work files migrate into main app without deleting the old files')
 result=action('workspace_exec',{'command':'cat before-install.txt; cat /etc/alpine-release; printf GENERATED > generated.txt','timeout':30000})
 assert result['exitCode']==0 and '3.24.4' in result['stdout'] and 'file access without Linux' in result['stdout'],result
 assert action('workspace_read',{'path':'generated.txt'})['content']=='GENERATED'
