@@ -103,6 +103,7 @@ jobs:
             runtime-build/instrumentation/signed.apk
   device:
     needs: main
+    if: always() && needs.main.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:

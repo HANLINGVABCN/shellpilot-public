@@ -1,0 +1,71 @@
+name: verify-integrated-devices
+on:
+  workflow_dispatch:
+    inputs:
+      main_run:
+        description: Completed integrated main build run
+        required: true
+permissions:
+  contents: read
+  actions: read
+jobs:
+  device:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - api: 30
+            legacy: false
+          - api: 35
+            legacy: false
+          - api: 30
+            legacy: true
+    env:
+      LEGACY: ${{ matrix.legacy }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify reused main application sources
+        env:
+          SOURCE_RUN: ${{ inputs.main_run }}
+        run: |
+          source=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN --jq .head_sha)
+          git diff --exit-code "$source" HEAD -- src server-rs src-tauri runtime/android/WorkspaceBridge.kt runtime/android/IntegratedWorkspaceService.java scripts/patch-android.mjs scripts/patch-proot-workspace.py scripts/patch-proot-network.py scripts/build-android-runtime.sh
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN/jobs --jq '.jobs[] | select(.name == "main") | .conclusion')" = success
+      - uses: actions/download-artifact@v4
+        with:
+          name: integrated-main
+          run-id: ${{ inputs.main_run }}
+          github-token: ${{ github.token }}
+          path: runtime-build/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Obtain old component only for migration fixtures
+        if: matrix.legacy
+        run: |
+          mkdir -p runtime-build/legacy
+          gh release download linux-alpine-3.24.4-v2 --repo "$GITHUB_REPOSITORY" --pattern ShellPilot-Linux-Android-x86_64.apk --dir runtime-build/legacy
+          printf 'cb6b0b4eea5337e6c5a63c6586bb23eae142ad64abf8c01c88c7c547e59bb6b3  runtime-build/legacy/ShellPilot-Linux-Android-x86_64.apk\n' | sha256sum --check
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disable-animations: true
+          script: |
+            if test "$LEGACY" = true; then adb install runtime-build/legacy/ShellPilot-Linux-Android-x86_64.apk; adb install runtime-build/main/runtime-build/instrumentation/signed.apk; adb shell 'echo PRIVATE_CANARY > /data/local/tmp/shellpilot-private-canary; chmod 600 /data/local/tmp/shellpilot-private-canary'; adb shell am instrument -w app.shellpilot.workspace.test/.RuntimeTest | tee runtime-build/legacy.txt; grep -F 'PASS: Android PRoot' runtime-build/legacy.txt; fi
+            adb install runtime-build/main/runtime-build/ShellPilot-x86_64-test.apk
+            if test "$LEGACY" = true; then SHELLPILOT_LEGACY_TEST=1 python3 scripts/verify-android-integrated.py; else python3 scripts/verify-android-integrated.py; fi
+            WORKSPACE_TEST_URL=http://127.0.0.1:3738 node scripts/verify-workspace-terminals.mjs
+            adb install runtime-build/main/runtime-build/integrated-test/signed.apk
+            adb shell am instrument -w app.shellpilot.client.test/.IntegratedRuntimeTest | tee runtime-build/boundary-check.txt
+            grep -F 'PASS: main-app credential' runtime-build/boundary-check.txt

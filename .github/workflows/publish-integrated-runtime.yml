@@ -5,6 +5,10 @@ on:
       build_run:
         description: Successful integrated runtime/device run
         required: true
+      main_run:
+        description: Original main/native build if device run reused it
+        required: false
+        default: ''
 permissions:
   contents: write
   actions: read
@@ -22,19 +26,24 @@ jobs:
       - name: Verify source and completed devices
         run: |
           test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN --jq .conclusion)" = success
+          test "$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN/jobs --jq '[.jobs[] | select(.name | startswith("device")) | select(.conclusion == "success")] | length')" -ge 3
+          if test -n '${{ inputs.main_run }}'; then original='${{ inputs.main_run }}'; else original="$SOURCE_RUN"; fi
+          printf 'ORIGINAL_BUILD=%s\n' "$original" >> "$GITHUB_ENV"
+          original_sha=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$original --jq .head_sha)
+          git diff --exit-code "$original_sha" HEAD -- src server-rs src-tauri runtime/android/IntegratedWorkspaceService.java runtime/android/WorkspaceBridge.kt scripts/patch-android.mjs scripts/patch-proot-workspace.py scripts/patch-proot-network.py scripts/build-android-runtime.sh
           source=$(gh api repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN --jq .head_sha)
           git diff --exit-code "$source" HEAD -- runtime/android/IntegratedWorkspaceService.java runtime/android/WorkspaceBridge.kt scripts/patch-proot-workspace.py scripts/patch-proot-network.py scripts/build-android-runtime.sh scripts/patch-android.mjs
       - uses: actions/download-artifact@v4
         with:
           pattern: integrated-native-*
-          run-id: ${{ inputs.build_run }}
+          run-id: ${{ env.ORIGINAL_BUILD }}
           github-token: ${{ github.token }}
           merge-multiple: true
           path: runtime-assets
       - uses: actions/download-artifact@v4
         with:
           name: integrated-main
-          run-id: ${{ inputs.build_run }}
+          run-id: ${{ env.ORIGINAL_BUILD }}
           github-token: ${{ github.token }}
           path: runtime-main
       - name: Publish data and build-only native runtime
