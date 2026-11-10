@@ -1,10 +1,10 @@
 // Inline ghost text follows the shell prompt, never a guessed password/input line.
 export function attachTerminalHistory(term,element,{send}){
-  let token='',commands=[],prompt=null,column=0,editing=false,suggestion='',prefix='',suppressed='',composing=false,live=true,pendingInput=false,expectedLine=null;
+  let token='',commands=[],prompt=null,column=0,editing=false,suggestion='',prefix='',suppressed='',composing=false,live=true,pendingInput=false,expectedLine=null,freshInput=false;
   const screen=element.querySelector('.xterm-screen'),ghost=document.createElement('span');
   ghost.className='terminal-history-suggestion';ghost.hidden=true;ghost.setAttribute('role','button');ghost.setAttribute('aria-label','接受历史命令建议');screen.appendChild(ghost);
   const clear=()=>{ghost.hidden=true;suggestion='';};
-  const reset=()=>{editing=false;expectedLine=null;prompt?.dispose();prompt=null;clear();};
+  const reset=()=>{editing=false;expectedLine=null;prefix='';freshInput=false;prompt?.dispose();prompt=null;clear();};
   function refresh(){
     if(!live||!editing||!prompt||prompt.isDisposed||composing||pendingInput||term.buffer.active.type!=='normal'||term.getSelection()){clear();return;}
     const buffer=term.buffer.active,row=buffer.baseY+buffer.cursorY,start=prompt.line;
@@ -16,6 +16,7 @@ export function attachTerminalHistory(term,element,{send}){
       text+=line.translateToString(false,index===start?column:0,index===row?buffer.cursorX:term.cols);
     }
     prefix=text;
+    if(!freshInput){clear();return;}
     // An earlier echo is not an acknowledgement of all queued keystrokes.
     if(expectedLine!==null&&text!==expectedLine){clear();return;}
     if(!text||text===suppressed||text.includes('\n')){clear();return;}
@@ -30,7 +31,7 @@ export function attachTerminalHistory(term,element,{send}){
   const parser=term.parser.registerOscHandler(777,data=>{
     const marker='ShellPilot;'+token+';';if(!token||!data.startsWith(marker))return false;
     const code=data.slice(marker.length);
-    if(code==='P'){reset();}else if(code==='I'){prompt?.dispose();prompt=term.registerMarker(0);column=term.buffer.active.cursorX;editing=true;expectedLine='';suppressed='';}else if(code==='C'){reset();}
+    if(code==='P'){reset();}else if(code==='I'){prompt?.dispose();prompt=term.registerMarker(0);column=term.buffer.active.cursorX;editing=true;expectedLine=null;freshInput=false;suppressed='';}else if(code==='C'){reset();}
     return true;
   });
   const listeners=[term.onWriteParsed(()=>{pendingInput=false;refresh();}),term.onCursorMove(refresh),term.onScroll(refresh),term.onResize(refresh),term.onSelectionChange(refresh)];
@@ -44,6 +45,7 @@ export function attachTerminalHistory(term,element,{send}){
     setCommands(value){commands=Array.isArray(value)?value.filter(command=>typeof command==='string'&&!/[\r\n\x00]/.test(command)):[];refresh();},
     input(data){
       pendingInput=true;clear();if(!editing)return;
+      freshInput=true;
       if(data.includes('\r')||data.includes('\n')){editing=false;expectedLine=null;return;}
       if(data.startsWith('\x1b[200~')&&data.endsWith('\x1b[201~'))data=data.slice(6,-6);
       if(data==='\x7f'){expectedLine=Array.from(expectedLine??prefix).slice(0,-1).join('');}
