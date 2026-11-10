@@ -9,6 +9,10 @@ on:
         description: Original main/native build if device run reused it
         required: false
         default: ''
+      tag:
+        description: New immutable runtime tag
+        required: true
+        default: linux-alpine-3.24.4-integrated-v2
 permissions:
   contents: write
   actions: read
@@ -19,6 +23,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE_RUN: ${{ inputs.build_run }}
+      RUNTIME_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,17 +54,23 @@ jobs:
       - name: Publish data and build-only native runtime
         run: |
           set -euo pipefail
-          tag=linux-alpine-3.24.4-integrated-v1
+          tag="$RUNTIME_TAG"
           cp runtime-main/runtime-build/native/native-manifest.json runtime-assets/native-manifest.json
+          python3 - <<'PY'
+          import pathlib,json,os
+          file=pathlib.Path('runtime-assets/native-manifest.json');manifest=json.loads(file.read_text());manifest['tag']=os.environ['RUNTIME_TAG'];file.write_text(json.dumps(manifest,indent=2)+'\n')
+          PY
           (cd runtime-assets && sha256sum ./*.tar.gz > SHA256SUMS.txt)
           gh release create "$tag" runtime-assets/* --target "$GITHUB_SHA" --title 'ShellPilot · 内置工作区运行文件' --notes 'Linux根文件系统供工作区页面按需下载解压，不是APK。原生程序只用于构建并随主应用签名发布，不在手机上额外安装。两架构编译、安卓10/15实际单应用运行、文件、终端和访问边界检查通过。Windows继续复用原运行组件。' --prerelease --latest=false
           python3 - <<'PY'
-          import pathlib,json,subprocess
+          import pathlib,json,subprocess,os
           manifest=json.load(open('runtime-main/runtime/manifest.json'))
-          release=json.loads(subprocess.check_output(['gh','api','repos/HANLINGVABCN/shellpilot-public/releases/tags/linux-alpine-3.24.4-integrated-v1']))
+          manifest['version']=os.environ['RUNTIME_TAG'].removeprefix('linux-')
+          release=json.loads(subprocess.check_output(['gh','api','repos/HANLINGVABCN/shellpilot-public/releases/tags/'+os.environ['RUNTIME_TAG']]))
           assets={asset['name']:asset for asset in release['assets']}
           for key in ['android-arm64','android-x86_64']:
               package=manifest['packages'][key];asset=assets[package['file']]
+              package['version']=manifest['version']
               package['urls']=[asset['browser_download_url'],asset['url']]+package['urls']
           pathlib.Path('runtime-assets/runtime-manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
           PY
