@@ -55,7 +55,6 @@ async fn configure_locked(st:&Arc<crate::AppState>,mut config:WorkspaceConfig)->
  st.workspace.linux.stop().await;
  #[cfg(target_os="android")]{
   config.directory="/workspace".into();
-  if config.enabled&&!android::ready().await?{return Err("请先安装Linux工作区运行组件".into());}
   crate::save_json("workspace.json",&json!(config));
   *st.workspace.config.lock().await=config;st.broadcast_all(&json!({"type":"workspace-changed"}));return Ok(());
  }

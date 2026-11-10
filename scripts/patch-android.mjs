@@ -83,10 +83,11 @@ if (fs.existsSync(srcIconsDir) && fs.existsSync(dstResDir)) {
 
 console.log('--- Android cleartext & icon configuration completed successfully ---');
 
-// A signature-protected companion owns the Linux files and PRoot process.
+// The main APK owns the private runtime process; Linux data is downloaded later.
 const javaRoot=path.join(androidRoot,'app/src/main/java/app/shellpilot/client');
 fs.mkdirSync(javaRoot,{recursive:true});
 fs.copyFileSync('runtime/android/WorkspaceBridge.kt',path.join(javaRoot,'WorkspaceBridge.kt'));
+fs.copyFileSync('runtime/android/IntegratedWorkspaceService.java',path.join(javaRoot,'IntegratedWorkspaceService.java'));
 const mainFile=path.join(javaRoot,'MainActivity.kt');
 if(fs.existsSync(mainFile)){
  let source=fs.readFileSync(mainFile,'utf8');
@@ -98,10 +99,13 @@ if(fs.existsSync(mainFile)){
  fs.writeFileSync(mainFile,source);
 }
 let appManifest=fs.readFileSync(manifestXml,'utf8');
-if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="app.shellpilot.workspace.ACCESS"/><uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/><queries><package android:name="app.shellpilot.workspace"/></queries>\n<application`);
-if(!appManifest.includes('workspace-files'))appManifest=appManifest.replace('</application>',`<provider android:name="androidx.core.content.FileProvider" android:authorities="app.shellpilot.client.workspace-files" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/workspace_files"/></provider></application>`);
+appManifest=appManifest.replace(/<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"\s*\/>/g,'').replace(/<provider[^>]*android:authorities="app.shellpilot.client.workspace-files"[^>]*>[\s\S]*?<\/provider>/g,'');
+if(!appManifest.includes('android.permission.FOREGROUND_SERVICE_SPECIAL_USE'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>\n<application`);
+if(!appManifest.includes('IntegratedWorkspaceService'))appManifest=appManifest.replace('</application>',`<service android:name=".IntegratedWorkspaceService" android:process=":workspace" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated local Linux workspace terminal and file tasks"/></service></application>`);
+appManifest=appManifest.replace(/android:extractNativeLibs="[^"]*"/,'android:extractNativeLibs="true"');
+if(!appManifest.includes('android:extractNativeLibs='))appManifest=appManifest.replace('<application','<application android:extractNativeLibs="true"');
 fs.writeFileSync(manifestXml,appManifest);
-fs.writeFileSync(path.join(resXmlDir,'workspace_files.xml'),'<paths xmlns:android="http://schemas.android.com/apk/res/android"><cache-path name="linux-installer" path="linux-installer/"/></paths>');
+if(fs.existsSync(appBuildGradle)){let gradle=fs.readFileSync(appBuildGradle,'utf8');if(!gradle.includes('useLegacyPackaging = true'))gradle+='\nandroid { packaging { jniLibs { useLegacyPackaging = true } } }\n';fs.writeFileSync(appBuildGradle,gradle);}
 const rules=path.join(androidRoot,'app/proguard-rules.pro');
 let keep=fs.existsSync(rules)?fs.readFileSync(rules,'utf8'):'';
 if(!keep.includes('workspaceRuntime'))keep+='\n-keepclassmembers class app.shellpilot.client.MainActivity { public java.lang.String workspaceRuntime(java.lang.String); private native void registerWorkspaceBridge(); }\n';

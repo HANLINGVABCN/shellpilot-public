@@ -6,7 +6,7 @@ import WorkspaceTerminal from './WorkspaceTerminal.jsx';
 import WorkspaceFiles from './WorkspaceFiles.jsx';
 
 export const workspaceSupported = () => /Windows|Android/i.test(navigator.userAgent);
-const phases = {'not-installed':'未安装', downloading:'正在下载', verifying:'正在校验', extracting:'正在解压', installed:'已安装', paused:'已暂停', failed:'安装失败', 'confirm-installation':'等待安卓安装确认'};
+const phases = {'not-installed':'未安装', downloading:'正在下载', verifying:'正在校验', extracting:'正在解压', installed:'已安装', paused:'已暂停', failed:'安装失败'};
 const storageKey = 'shellpilot-workspace-tabs';
 const fresh = type => ({id:crypto.randomUUID(), type, path:'', pinned:false});
 function restore() {
@@ -32,7 +32,7 @@ export function LinuxRuntimeSettings({onTerminal}) {
     <div className="workspace-heading"><strong>Alpine Linux</strong><span>{state.running ? '运行中' : phases[state.phase]||state.phase} {state.version||''}</span></div>
     {installing && <div className="linux-progress" role="status"><span className="spinner-dot" aria-hidden="true"/>{phases[state.phase]} {received.toLocaleString('en-US')}/{total.toLocaleString('en-US')}B{total>0 && <progress value={received} max={total}/>}</div>}
     <div className="memory-controls">
-      {!state.installed && <button className="btn primary" disabled={busy||installing||state.available===false} onClick={() => action('install')}>{state.phase==='confirm-installation' ? '完成安装' : ['paused','failed'].includes(state.phase) ? '继续安装' : '安装 Linux 工作区'}</button>}
+      {!state.installed && <button className="btn primary" disabled={busy||installing||state.available===false} onClick={() => action('install')}>{['paused','failed'].includes(state.phase) ? '继续安装' : '安装 Linux 工作区'}</button>}
       {installing && <button className="btn" disabled={busy} onClick={() => action('pause')}>暂停安装</button>}
       {state.installed && <><button className="btn" disabled={busy} onClick={() => action(state.running ? 'stop' : 'start')}>{state.running ? '停止运行' : '启动环境'}</button>{onTerminal && <button className="btn" disabled={busy} onClick={onTerminal}>打开终端</button>}<button className="btn danger" disabled={busy} onClick={() => setConfirmUninstall(true)}>卸载运行环境</button></>}
     </div>

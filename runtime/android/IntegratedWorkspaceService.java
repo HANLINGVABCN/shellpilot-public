@@ -1,0 +1,168 @@
+package app.shellpilot.client;
+import android.app.Service;
+import android.content.Intent;
+import android.os.*;
+import org.json.*;
+import java.io.*;
+import java.lang.Process;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.concurrent.*;
+
+/** Private workspace process with a trusted path/network-restricted PRoot runner. */
+public final class IntegratedWorkspaceService extends Service {
+ private File root,files;
+ private static final class TerminalSession {Process process;File size;final ByteArrayOutputStream output=new ByteArrayOutputStream();}
+ private final Map<String,TerminalSession> terminals=new ConcurrentHashMap<>();
+ private volatile boolean active;
+ private final Set<Process> processes=ConcurrentHashMap.newKeySet();
+ private final ExecutorService workers=Executors.newCachedThreadPool();
+ private final Object prepareLock=new Object();
+ private final Binder binder=new Binder(){protected boolean onTransact(int code,Parcel input,Parcel output,int flags)throws RemoteException{
+  if(code!=1)return super.onTransact(code,input,output,flags);
+  if(Binder.getCallingUid()!=android.os.Process.myUid())throw new SecurityException("Workspace is private to ShellPilot");
+  try{
+   JSONObject body=new JSONObject(input.readString());ParcelFileDescriptor descriptor=input.readInt()==1?ParcelFileDescriptor.CREATOR.createFromParcel(input):null;
+   JSONObject result;
+   try{result=dispatch(body,descriptor);}finally{if(descriptor!=null)descriptor.close();}
+   output.writeNoException();output.writeString(result.toString());
+  }catch(Exception error){output.writeNoException();output.writeString("{\"error\":"+JSONObject.quote(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage())+"}");}return true;
+ }};
+ public IBinder onBind(Intent intent){return binder;}
+ public void onCreate(){super.onCreate();root=new File(getNoBackupFilesDir(),"linux");files=new File(getFilesDir(),"workspace");files.mkdirs();}
+ public int onStartCommand(Intent intent,int flags,int id){android.app.NotificationManager manager=(android.app.NotificationManager)getSystemService(NOTIFICATION_SERVICE);manager.createNotificationChannel(new android.app.NotificationChannel("workspace","Linux工作区",android.app.NotificationManager.IMPORTANCE_LOW));startForeground(1,new android.app.Notification.Builder(this,"workspace").setSmallIcon(android.R.drawable.ic_menu_manage).setContentTitle("ShellPilot Linux 工作区").setContentText("本机文件与运行环境").build());return START_NOT_STICKY;}
+ public void onDestroy(){stopAll();workers.shutdownNow();super.onDestroy();}
+ private JSONObject dispatch(JSONObject body,ParcelFileDescriptor fd)throws Exception{
+  String op=body.optString("op");
+  if(op.equals("status"))return new JSONObject().put("installed",new File(root,".installed").isFile()).put("running",active);
+  if(op.equals("install")){install(body,fd);return new JSONObject().put("installed",true);}
+  if(op.equals("start")){requireInstalled();active=true;return new JSONObject().put("installed",true).put("running",active);}
+  if(op.equals("prepare")){requireInstalled();return new JSONObject().put("installed",true);}
+  if(op.equals("stop")){stopAll();return new JSONObject().put("stopped",true);}
+  if(op.equals("uninstall")){stopAll();deleteTree(root);new File(getNoBackupFilesDir(),"linux-rootfs.tar.gz").delete();return new JSONObject().put("uninstalled",true).put("filesPreserved",true);}
+  if(op.equals("import")||op.equals("export")){
+   File file=resolve(body.getString("path"),op.equals("import"));
+   if(fd==null)throw new IOException("Missing file descriptor");
+   if(op.equals("import")){if(file.exists())throw new IOException("文件已存在");try(InputStream in=new FileInputStream(fd.getFileDescriptor())){exclusiveCopy(in,file);}}
+   else{try(InputStream in=new FileInputStream(file);OutputStream out=new FileOutputStream(fd.getFileDescriptor())){copy(in,out,1024L*1024*1024);}}
+   return new JSONObject().put("ok",true);
+  }
+  if(op.startsWith("terminal-")){
+   String id=body.optString("session","default");
+   synchronized(terminals){
+    TerminalSession session=terminals.get(id);
+    if(op.equals("terminal-open")){
+     requireInstalled();if(session!=null&&session.process.isAlive())throw new IOException("终端已打开");
+     String path=body.optString("path","");File directory=resolve(path,false);if(!directory.isDirectory())throw new IOException("终端目录不存在");
+     session=new TerminalSession();session.size=File.createTempFile("terminal-",".size",workspaceCache());
+     try(OutputStream out=new FileOutputStream(session.size)){out.write("100 28".getBytes(StandardCharsets.US_ASCII));}
+     session.process=launch("cd -- "+quote("/workspace"+(path.isEmpty()?"":"/"+path))+"; exec /bin/sh -i",body.optBoolean("network",false),session.size);
+     readAsync(session.process.getInputStream(),session.output,256*1024);readAsync(session.process.getErrorStream(),session.output,256*1024);terminals.put(id,session);active=true;
+     return new JSONObject().put("opened",true);
+    }
+    if(op.equals("terminal-close")){if(session!=null){terminals.remove(id);terminate(session.process);processes.remove(session.process);session.size.delete();}return new JSONObject().put("closed",true);}
+    if(session==null)throw new IOException("终端未打开");
+    if(op.equals("terminal-input")){session.process.getOutputStream().write(body.getString("data").getBytes(StandardCharsets.UTF_8));session.process.getOutputStream().flush();return new JSONObject().put("ok",true);}
+    if(op.equals("terminal-resize")){try(OutputStream out=new FileOutputStream(session.size)){String size=Math.max(2,Math.min(500,body.optInt("cols",100)))+" "+Math.max(2,Math.min(500,body.optInt("rows",28)));out.write(size.getBytes(StandardCharsets.US_ASCII));}return new JSONObject().put("ok",true);}
+    if(op.equals("terminal-output")){synchronized(session.output){String text=session.output.toString("UTF-8");session.output.reset();return new JSONObject().put("output",text).put("closed",!session.process.isAlive());}}
+   }
+  }
+  if(!op.equals("action"))throw new IOException("Unknown runtime operation");
+  JSONObject args=body.optJSONObject("arguments");if(args==null)args=new JSONObject();String name=body.getString("name");String path=args.optString("path","");
+  if(name.equals("workspace_exec")){requireInstalled();return execute(args.getString("command"),body.optBoolean("network",false),Math.max(100,Math.min(900000,args.optLong("timeout",120000))));}
+  File target=resolve(path,name.equals("workspace_write")||name.equals("workspace_mkdir"));
+  if(name.equals("workspace_list")){JSONArray entries=new JSONArray();File[] list=target.listFiles();if(list==null)throw new IOException("无法列出目录");Arrays.sort(list,Comparator.comparing(File::getName));for(File item:list){if(item.getName().startsWith(".upload-"))continue;entries.put(new JSONObject().put("name",item.getName()).put("directory",item.isDirectory()).put("size",item.length()).put("mtime",item.lastModified()));if(entries.length()>=2000)break;}return new JSONObject().put("entries",entries).put("path",path);}
+  if(name.equals("workspace_read")){if(target.length()>1024*1024)throw new IOException("文本文件超过1MB，请下载处理");byte[] bytes=readBytes(target);return new JSONObject().put("path",path).put("content",new String(bytes,StandardCharsets.UTF_8)).put("sha256",hash(bytes));}
+  if(name.equals("workspace_write")){byte[] bytes=args.getString("content").getBytes(StandardCharsets.UTF_8);if(bytes.length>1024*1024)throw new IOException("单次写入超过1MB");String expected=target.exists()?hash(readBytes(target)):"missing";if(args.has("expectedHash")&&!expected.equals(args.getString("expectedHash")))throw new IOException("文件已变化，请重新读取后保存");File temp=new File(target.getParentFile(),".upload-"+UUID.randomUUID());try(OutputStream out=new FileOutputStream(temp)){out.write(bytes);}if(!temp.renameTo(target))throw new IOException("文件保存失败");return new JSONObject().put("written",true).put("sha256",hash(bytes));}
+  if(name.equals("workspace_mkdir")){if(!target.mkdir())throw new IOException("目录创建失败");return new JSONObject().put("ok",true);}
+  if(name.equals("workspace_delete")){if(target.equals(files))throw new IOException("不能删除工作区根目录");if(args.optBoolean("recursive",false))removeWorkspace(target);else if(!target.delete())throw new IOException("只能删除文件或空目录");return new JSONObject().put("ok",true);}
+  if(name.equals("workspace_rename")){File to=resolve(args.getString("to"),true);if(target.equals(files)||to.exists()||to.getPath().startsWith(target.getPath()+"/")||!target.renameTo(to))throw new IOException("重命名目标已存在或不可用");return new JSONObject().put("ok",true);}
+  if(name.equals("workspace_copy")){
+   if(!target.isDirectory())throw new IOException("粘贴目标必须是目录");JSONArray sources=args.getJSONArray("paths");
+   for(int index=0;index<sources.length();index++){File source=resolve(sources.getString(index),false);if(source.equals(files))throw new IOException("不能复制根目录");
+    File to=new File(target,source.getName());if(args.optBoolean("move",false)&&to.equals(source))continue;if(to.getPath().startsWith(source.getPath()+"/"))throw new IOException("不能复制到自身目录");
+    int suffix=2;while(to.exists())to=new File(target,source.getName()+" ("+(suffix++)+")");
+    resolve(to.getPath().substring(files.getPath().length()+1),true);
+    if(args.optBoolean("move",false)){if(!source.renameTo(to))throw new IOException("移动失败");}else copyWorkspace(source,to);
+   }return new JSONObject().put("ok",true);
+  }
+  throw new IOException("Unknown workspace tool");
+ }
+ private void requireInstalled()throws IOException{if(!new File(root,".installed").isFile())throw new IOException("请先在工作区配置页面下载Linux环境");}
+ private void install(JSONObject body,ParcelFileDescriptor descriptor)throws Exception{synchronized(prepareLock){
+  if(descriptor==null)throw new IOException("Linux文件未准备好");stopAll();
+  File archive=new File(getNoBackupFilesDir(),"linux-rootfs.tar.gz");
+  String expected=body.getString("sha256");long expectedBytes=body.getLong("bytes");
+  if(expected.length()!=64||expectedBytes<=0||expectedBytes>128L*1024*1024)throw new IOException("Linux文件清单无效");
+  java.security.MessageDigest digest=java.security.MessageDigest.getInstance("SHA-256");long bytes=0;
+  File temp=new File(getNoBackupFilesDir(),"linux-rootfs-"+UUID.randomUUID()+".tmp");
+  try{try(InputStream input=new FileInputStream(descriptor.getFileDescriptor());OutputStream output=new FileOutputStream(temp)){
+    byte[] buffer=new byte[65536];int size;while((size=input.read(buffer))>=0){bytes+=size;if(bytes>expectedBytes)throw new IOException("Linux下载大小不匹配");digest.update(buffer,0,size);output.write(buffer,0,size);}
+  }
+  StringBuilder value=new StringBuilder();for(byte b:digest.digest())value.append(String.format("%02x",b&255));
+  if(bytes!=expectedBytes||!value.toString().equals(expected))throw new IOException("Linux文件校验失败，请重新下载");
+  if(root.exists())deleteTree(root);root.mkdirs();
+  try(InputStream input=new java.util.zip.GZIPInputStream(new FileInputStream(temp))){extractRootfs(input);}
+  new File(root,"workspace").mkdirs();new File(root,"tmp").mkdirs();
+  try(OutputStream output=new FileOutputStream(new File(root,"etc/resolv.conf"))){output.write("nameserver 1.1.1.1\nnameserver 8.8.8.8\n".getBytes(StandardCharsets.UTF_8));}
+  if(archive.exists())archive.delete();if(!temp.renameTo(archive))throw new IOException("Linux文件保存失败");new File(root,".installed").createNewFile();
+  }catch(Exception error){if(root.exists())deleteTree(root);throw error;}finally{temp.delete();}
+ }}
+ private void extractRootfs(InputStream in)throws Exception{
+  byte[] header=new byte[512],buffer=new byte[65536];long total=0;String longName=null;
+  while(true){int used=0;while(used<512){int n=in.read(header,used,512-used);if(n<0)throw new IOException("Linux压缩包被截断");used+=n;}boolean empty=true;for(byte b:header)if(b!=0){empty=false;break;}if(empty)break;
+   String name=longName!=null?longName:tarText(header,0,100);longName=null;String prefix=tarText(header,345,155);if(!prefix.isEmpty())name=prefix+"/"+name;
+   long size=tarNumber(header,124,12);int mode=(int)tarNumber(header,100,8);char type=(char)header[156];total+=size;if(total>128L*1024*1024)throw new IOException("Linux解压大小超限");
+   if(type=='L'){byte[] bytes=new byte[(int)size];readExactly(in,bytes);longName=new String(bytes,StandardCharsets.UTF_8).replace("\u0000","").trim();}
+   else if(type=='x'||type=='g'){skipExactly(in,size);}
+   else{
+    if(name.startsWith("/")||name.contains("../")||name.equals(".."))throw new IOException("Linux压缩包路径越界");File target=new File(root,name);File parent=target.getParentFile();if(parent!=null){File cursor=parent;while(cursor!=null&&!cursor.equals(root)){if(java.nio.file.Files.isSymbolicLink(cursor.toPath()))throw new IOException("Linux压缩包穿过链接");cursor=cursor.getParentFile();}parent.mkdirs();}
+    if(type=='5'){target.mkdirs();}
+    else if(type=='2'){String link=tarText(header,157,100);String virtual=link.startsWith("/")?link:"/"+name.substring(0,Math.max(0,name.lastIndexOf('/')+1))+link;if(java.nio.file.Paths.get(virtual).normalize().toString().contains(".."))throw new IOException("Linux链接无效");android.system.Os.symlink(link,target.getAbsolutePath());}
+    else if(type=='1'){File link=new File(root,tarText(header,157,100));if(!link.getCanonicalPath().startsWith(root.getCanonicalPath()+"/"))throw new IOException("Linux硬链接越界");android.system.Os.link(link.getAbsolutePath(),target.getAbsolutePath());}
+    else if(type=='0'||type==0){if(java.nio.file.Files.isSymbolicLink(target.toPath()))throw new IOException("Linux文件覆盖链接");try(OutputStream out=new FileOutputStream(target)){long remaining=size;while(remaining>0){int n=in.read(buffer,0,(int)Math.min(buffer.length,remaining));if(n<0)throw new IOException("Linux文件被截断");out.write(buffer,0,n);remaining-=n;}}}
+    else throw new IOException("Linux压缩包包含设备或不支持的条目");
+    if(type!='2')android.system.Os.chmod(target.getAbsolutePath(),mode&0777);if(type!='0'&&type!=0&&size>0)skipExactly(in,size);
+   }
+   skipExactly(in,(512-size%512)%512);
+  }
+ }
+ private static String tarText(byte[] bytes,int start,int length){int n=0;while(n<length&&bytes[start+n]!=0)n++;return new String(bytes,start,n,StandardCharsets.UTF_8).trim();}
+ private static long tarNumber(byte[] bytes,int start,int length)throws IOException{String text=tarText(bytes,start,length);try{return text.isEmpty()?0:Long.parseLong(text,8);}catch(NumberFormatException e){throw new IOException("Linux压缩包数值无效");}}
+ private static void readExactly(InputStream in,byte[] bytes)throws IOException{int used=0;while(used<bytes.length){int n=in.read(bytes,used,bytes.length-used);if(n<0)throw new IOException("Linux压缩包被截断");used+=n;}}
+ private static void skipExactly(InputStream in,long bytes)throws IOException{byte[] buffer=new byte[8192];while(bytes>0){int n=in.read(buffer,0,(int)Math.min(bytes,buffer.length));if(n<0)throw new IOException("Linux压缩包被截断");bytes-=n;}}
+ private File workspaceCache(){File dir=new File(getCacheDir(),"workspace");dir.mkdirs();return dir;}
+ private Process launch(String command,boolean network)throws Exception{return launch(command,network,null);}
+ private Process launch(String command,boolean network,File terminalSize)throws Exception{
+  active=true;
+  ArrayList<String> argv=new ArrayList<>();String lib=getApplicationInfo().nativeLibraryDir;
+  if(terminalSize!=null){argv.add(lib+"/libterminal_exec.so");argv.add(terminalSize.getAbsolutePath());}
+  argv.add(lib+"/libproot_exec.so");Collections.addAll(argv,"--root-id","--link2symlink","--kill-on-exit","-r",root.getAbsolutePath(),"-b",files.getAbsolutePath()+":/workspace","-b","/dev","-b","/proc","-w","/workspace","/usr/bin/env","-i","HOME=/root","PATH=/usr/sbin:/usr/bin:/sbin:/bin","TERM=xterm-256color","LANG=C.UTF-8","/bin/sh","-c",command);
+  ProcessBuilder builder=new ProcessBuilder(argv).directory(files);builder.environment().clear();builder.environment().put("PROOT_LOADER",lib+"/libproot_loader.so");builder.environment().put("PROOT_TMP_DIR",workspaceCache().getAbsolutePath());builder.environment().put("PROOT_NO_SECCOMP","1");builder.environment().put("SHELLPILOT_NETWORK",network?"1":"0");builder.environment().put("SHELLPILOT_ROOT",root.getCanonicalPath());builder.environment().put("SHELLPILOT_FILES",files.getCanonicalPath());builder.environment().put("SHELLPILOT_TMP",workspaceCache().getCanonicalPath());builder.environment().put("SHELLPILOT_LIB",new File(lib).getCanonicalPath());Process process=builder.start();processes.add(process);return process;
+ }
+ private JSONObject execute(String command,boolean network,long timeout)throws Exception{
+  long start=System.currentTimeMillis();Process process=launch(command,network);ByteArrayOutputStream out=new ByteArrayOutputStream(),err=new ByteArrayOutputStream();Future<?> stdout=readAsync(process.getInputStream(),out,128*1024),stderr=readAsync(process.getErrorStream(),err,128*1024);process.getOutputStream().close();boolean timedOut=!process.waitFor(timeout,TimeUnit.MILLISECONDS);if(timedOut)terminate(process);stdout.get(5,TimeUnit.SECONDS);stderr.get(5,TimeUnit.SECONDS);processes.remove(process);
+  JSONObject result=new JSONObject().put("exitCode",timedOut?-1:process.exitValue()).put("stdout",out.toString("UTF-8")).put("stderr",err.toString("UTF-8")).put("durationMs",System.currentTimeMillis()-start).put("sandbox","Android内置受限工作区＋PRoot");if(timedOut)result.put("error","工作区命令超时");return result;
+ }
+ private Future<?> readAsync(InputStream input,ByteArrayOutputStream output,int limit){return workers.submit(()->{byte[] bytes=new byte[8192];try{int n;while((n=input.read(bytes))>=0){synchronized(output){int used=Math.min(n,limit-output.size());if(used>0)output.write(bytes,0,used);}}}catch(IOException ignored){}});}
+ private void stopAll(){for(Process process:processes)terminate(process);processes.clear();for(TerminalSession session:terminals.values())session.size.delete();terminals.clear();active=false;}
+ private void terminate(Process process){if(terminals.values().stream().anyMatch(session->session.process==process)){process.destroy();try{if(process.waitFor(3,TimeUnit.SECONDS))return;}catch(InterruptedException ignored){}}long pid=-1;try{java.lang.reflect.Field field=process.getClass().getDeclaredField("pid");field.setAccessible(true);pid=field.getLong(process);}catch(Exception ignored){}for(int attempt=0;attempt<8&&process.isAlive();attempt++){File[] proc=new File("/proc").listFiles();if(pid>0&&proc!=null)for(File entry:proc){try{String status=new String(readBytes(new File(entry,"status")),StandardCharsets.UTF_8);if(status.contains("TracerPid:\t"+pid+"\n"))android.system.Os.kill(Integer.parseInt(entry.getName()),9);}catch(Exception ignored){}}try{process.waitFor(100,TimeUnit.MILLISECONDS);}catch(InterruptedException ignored){}}process.destroyForcibly();}
+ private void exclusiveCopy(InputStream input,File target)throws Exception{
+  FileDescriptor descriptor=android.system.Os.open(target.getPath(),android.system.OsConstants.O_WRONLY|android.system.OsConstants.O_CREAT|android.system.OsConstants.O_EXCL|android.system.OsConstants.O_NOFOLLOW,0600);
+  android.system.StructStat owned=android.system.Os.fstat(descriptor);boolean complete=false;
+  try(OutputStream output=new FileOutputStream(descriptor)){copy(input,output,1024L*1024*1024);output.flush();android.system.Os.fsync(descriptor);complete=true;}
+  finally{if(!complete){try{android.system.StructStat current=android.system.Os.lstat(target.getPath());if(current.st_ino==owned.st_ino&&current.st_dev==owned.st_dev)target.delete();}catch(Exception ignored){}}}
+ }
+ private static String quote(String text){return "'"+text.replace("'","'\\''")+"'";}
+ private void removeWorkspace(File file)throws Exception{resolve(file.getPath().substring(files.getPath().length()+1),false);if(file.isDirectory()){File[] children=file.listFiles();if(children==null)throw new IOException("无法读取目录");for(File child:children)removeWorkspace(child);}if(!file.delete())throw new IOException("删除失败");}
+ private void copyWorkspace(File source,File target)throws Exception{
+  resolve(source.getPath().substring(files.getPath().length()+1),false);
+  if(source.isDirectory()){if(!target.mkdir())throw new IOException("目录创建失败");File[] children=source.listFiles();if(children==null)throw new IOException("无法读取目录");for(File child:children)copyWorkspace(child,new File(target,child.getName()));}
+  else{try(InputStream in=new FileInputStream(source)){exclusiveCopy(in,target);}}
+ }
+ private File resolve(String path,boolean create)throws Exception{if(path.startsWith("/")||path.contains("\\")||path.contains(":"))throw new IOException("只能使用工作区相对路径");File target=new File(files,path).getCanonicalFile();String base=files.getCanonicalPath();if(!target.getPath().equals(base)&&!target.getPath().startsWith(base+"/"))throw new IOException("文件超出工作区");File cursor=files;for(String part:path.split("/")){if(part.equals("..")||part.equalsIgnoreCase(".shellpilot")||part.indexOf(0)>=0||part.contains("\n")||part.contains("\r"))throw new IOException("工作区路径无效");cursor=new File(cursor,part);try{android.system.StructStat stat=android.system.Os.lstat(cursor.getPath());if(android.system.OsConstants.S_ISLNK(stat.st_mode)||stat.st_nlink>1&&!cursor.isDirectory())throw new IOException("不允许链接文件");}catch(android.system.ErrnoException error){if(!create)throw error;}}return target;}
+ private static byte[] readBytes(File file)throws IOException{try(InputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){copy(in,out,4L*1024*1024);return out.toByteArray();}}
+ private static String hash(byte[] bytes)throws Exception{byte[] digest=java.security.MessageDigest.getInstance("SHA-256").digest(bytes);StringBuilder text=new StringBuilder();for(byte b:digest)text.append(String.format("%02x",b&255));return text.toString();}
+ private static void copy(InputStream in,OutputStream out,long limit)throws IOException{byte[] buffer=new byte[65536];long total=0;int n;while((n=in.read(buffer))>=0){total+=n;if(total>limit)throw new IOException("文件超过大小限制");out.write(buffer,0,n);}}
+ private static void deleteTree(File file)throws IOException{if(java.nio.file.Files.isSymbolicLink(file.toPath())){java.nio.file.Files.delete(file.toPath());return;}if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);}if(file.exists()&&!file.delete())throw new IOException("运行环境卸载失败");}
+}

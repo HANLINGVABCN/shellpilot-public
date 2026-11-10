@@ -53,6 +53,7 @@ curl -fL --retry 4 https://github.com/termux/proot/archive/v5.1.107.102.zip -o "
 printf '30d12a6e2cc4147123756ff58edea262d3083bbc238c12d0ab9b39e3d1c40852  %s/proot.zip\n' "$work" | sha256sum --check
 unzip -q "$work/proot.zip" -d "$work/src"
 python3 scripts/patch-proot-network.py "$work/src/proot-5.1.107.102"
+if test "${SHELLPILOT_INTEGRATED:-0}" = 1;then python3 scripts/patch-proot-workspace.py "$work/src/proot-5.1.107.102";fi
 export PROOT_UNBUNDLE_LOADER=/system
 make -C "$work/src/proot-5.1.107.102/src" -j2 CC="$CC" LD="$CC" STRIP="$STRIP" OBJCOPY="$OBJCOPY" OBJDUMP="$OBJDUMP" CPPFLAGS="-DARG_MAX=131072 -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I$work -I. -DVERSION=\"5.1.107.102\"" LDFLAGS="$work/libtalloc.a -Wl,-z,noexecstack -Wl,-z,max-page-size=16384"
 cp "$work/src/proot-5.1.107.102/src/proot" "$work/jni/lib/$abi/libproot_exec.so"
@@ -62,6 +63,12 @@ curl -fL --retry 4 "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/$arch/a
 digest=4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de
 if test "$arch" = x86_64;then digest=cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012;fi
 printf '%s  %s/assets/rootfs.tar.gz\n' "$digest" "$work"|sha256sum --check
+if test "${SHELLPILOT_INTEGRATED:-0}" = 1;then
+ cp "$work/assets/rootfs.tar.gz" "runtime-build/ShellPilot-Linux-Android-$arch.tar.gz"
+ tar -czf "runtime-build/ShellPilot-Android-Native-$arch.tar.gz" -C "$work/jni" lib
+ tar -czf "runtime-build/ShellPilot-Linux-Android-$arch-sources.tar.gz" -C "$work/src" .
+ exit 0
+fi
 sdk="$ANDROID_HOME/platforms/android-35/android.jar";build="$ANDROID_HOME/build-tools/35.0.0"
 javac --release 8 -classpath "$sdk" -d "$work/classes" runtime/android/RuntimeService.java
 "$build/d8" --lib "$sdk" --min-api 26 --output "$work" $(find "$work/classes" -name '*.class')

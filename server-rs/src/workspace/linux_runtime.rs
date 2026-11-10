@@ -59,9 +59,10 @@ async fn install(st:&Arc<crate::AppState>,m:Manifest,keys:Vec<&'static str>)->Re
   tokio::task::spawn_blocking(move||install_archive(&archive,&target,&package,&version)).await.map_err(|e|e.to_string())??;
  }
  #[cfg(target_os="android")]{
-  update(st,"confirm-installation","android",0,0,None).await;
-  let path=base().join(platform()).join("runner.apk");let result=super::android::request(json!({"op":"install","path":path})).await?;
-  if result["confirmationRequired"]!=true{update(st,"installed","",0,0,None).await;}
+  update(st,"extracting","android",0,0,None).await;
+  let package=&m.packages[platform()];let path=base().join(platform()).join("rootfs.tar.gz");
+  super::android::request(json!({"op":"install","path":path,"sha256":package.sha256,"bytes":package.bytes})).await?;
+  update(st,"installed","",0,0,None).await;
  }
  #[cfg(not(target_os="android"))]update(st,"installed","",0,0,None).await;
  Ok(())
@@ -112,7 +113,7 @@ async fn verify(path:&Path,expected:&str)->Result<bool,String>{let path=path.to_
 }).await.map_err(|e|e.to_string())?}
 fn install_archive(archive:&Path,target:&Path,package:&Package,version:&str)->Result<(),String>{
  let staging=target.with_extension("staging");if staging.exists(){std::fs::remove_dir_all(&staging).map_err(|e|e.to_string())?;}std::fs::create_dir_all(&staging).map_err(|e|e.to_string())?;
- if package.file.ends_with(".apk"){std::fs::copy(archive,staging.join("runner.apk")).map_err(|e|e.to_string())?;}else{
+ if cfg!(target_os="android"){std::fs::copy(archive,staging.join("rootfs.tar.gz")).map_err(|e|e.to_string())?;}else if package.file.ends_with(".apk"){return Err("此版本只下载Linux文件，不安装额外APK".into());}else{
   let reader=flate2::read::GzDecoder::new(std::fs::File::open(archive).map_err(|e|e.to_string())?);let mut tar=tar::Archive::new(reader);let mut total=0u64;
   for entry in tar.entries().map_err(|e|e.to_string())?{let mut entry=entry.map_err(|e|e.to_string())?;let kind=entry.header().entry_type();if !kind.is_file()&&!kind.is_dir(){return Err("运行组件包含不允许的链接或设备文件".into());}
    let path=entry.path().map_err(|e|e.to_string())?;if path.is_absolute()||path.components().any(|c|!matches!(c,std::path::Component::Normal(_)|std::path::Component::CurDir)){return Err("运行组件文件路径无效".into());}
