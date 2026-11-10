@@ -1,5 +1,5 @@
 {
-  "version": "alpine-3.24.4-integrated-v1",
+  "version": "alpine-3.24.4-integrated-v2",
   "packages": {
     "windows-qemu": {
       "file": "ShellPilot-QEMU-Windows.tar.gz",
@@ -28,10 +28,10 @@
       "bytes": 4029843,
       "expandedBytes": 134217728,
       "sha256": "4b14c18f7e90a063b61462ea1462a5732c154bf6adad594974fe6487cd98a8de",
-      "version": "alpine-3.24.4-integrated-v1",
+      "version": "alpine-3.24.4-integrated-v2",
       "urls": [
-        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-integrated-v1/ShellPilot-Linux-Android-aarch64.tar.gz",
-        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/731337105",
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-integrated-v2/ShellPilot-Linux-Android-aarch64.tar.gz",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/731485050",
         "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.4-aarch64.tar.gz"
       ]
     },
@@ -40,10 +40,10 @@
       "bytes": 3704088,
       "expandedBytes": 134217728,
       "sha256": "cdaa38cb8de3537967ee5b6c9b6cd00cc962da2b018e6eea48696bb274923012",
-      "version": "alpine-3.24.4-integrated-v1",
+      "version": "alpine-3.24.4-integrated-v2",
       "urls": [
-        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-integrated-v1/ShellPilot-Linux-Android-x86_64.tar.gz",
-        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/731337136",
+        "https://github.com/HANLINGVABCN/shellpilot-public/releases/download/linux-alpine-3.24.4-integrated-v2/ShellPilot-Linux-Android-x86_64.tar.gz",
+        "https://api.github.com/repos/HANLINGVABCN/shellpilot-public/releases/assets/731485081",
         "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/x86_64/alpine-minirootfs-3.24.4-x86_64.tar.gz"
       ]
     }
