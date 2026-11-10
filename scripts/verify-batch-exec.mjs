@@ -9,6 +9,10 @@ execFileSync('ssh-keygen',['-q','-t','ed25519','-N','','-f',key]);
 const executed=[],children=new Set(),clients=new Set();let active=0,maximum=0,hostId,denyCommand='',approvals=[],pendingCommands=[];
 const ssh=new ssh2.Server({hostKeys:[fs.readFileSync(key)]},client=>{
  clients.add(client);client.on('close',()=>clients.delete(client));
+ // Killing the fixture backend/MCP intentionally resets its SSH sockets.
+ // Unexpected errors still fail the test; command/result assertions cover resets
+ // during execution instead of treating expected cleanup as a product failure.
+ client.on('error',error=>{if(error.code!=='ECONNRESET')throw error;});
  client.on('authentication',context=>context.accept());
  client.on('ready',()=>client.on('session',accept=>accept().on('exec',(accept,reject,info)=>{
   const stream=accept(),tracked=info.command.includes('batch-test-');executed.push(info.command);
