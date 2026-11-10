@@ -2,10 +2,10 @@
 if [ -n "${BASH_VERSION-}" ]; then
   __shellpilot_seed=1
   __shellpilot_history() {
-    local status=$? count=1
+    local __shellpilot_exit=$? count=1
     if [ "$__shellpilot_seed" = 1 ]; then count=200; __shellpilot_seed=0; fi
     printf '\033]777;ShellPilot;__TOKEN__;H;%s\007' "$(HISTTIMEFORMAT= builtin history "$count" | base64 | tr -d '\r\n')"
-    return "$status"
+    return "$__shellpilot_exit"
   }
   if [[ $(declare -p PROMPT_COMMAND 2>/dev/null) == 'declare -a'* ]]; then
     PROMPT_COMMAND+=(__shellpilot_history)

@@ -8,7 +8,7 @@ on:
       tag:
         description: 'New release tag'
         required: true
-        default: 'build-20261110-batch-policy'
+        default: 'build-20261110-terminal-history'
       title:
         description: 'Release title'
         required: true
@@ -42,7 +42,7 @@ jobs:
           test "$(jq -r .conclusion <<< "$run")" = success
           source_sha=$(jq -r .head_sha <<< "$run")
           git merge-base --is-ancestor "$source_sha" HEAD
-          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri runtime/manifest.json runtime/android/WorkspaceBridge.kt index.html package.json package-lock.json vite.config.mjs scripts ':(exclude)scripts/verify-*'
+          git diff --exit-code "$source_sha" HEAD -- src public server-rs src-tauri runtime index.html package.json package-lock.json vite.config.mjs scripts ':(exclude)scripts/verify-*'
           printf '%s\n' "BUILD_SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo 'Release already exists; choose a new tag instead of replacing published files.' >&2
@@ -80,14 +80,14 @@ jobs:
           cp verified-android/ANDROID-CERT-SHA256.txt release-assets/
           (cd release-assets && sha256sum ./*.exe ./*.apk > SHA256SUMS.txt)
           cat > release-notes.md <<'NOTES'
-          ShellPilot：批量命令统一使用当前执行权限。
+          ShellPilot：SSH终端行内历史命令建议。
 
-          - 删除批量执行专用的只读白名单，组合查询、分号、管道和重定向不会再被批量工具额外拦截。
-          - 批量与单条执行共用当前权限、命令黑名单和授权服务器范围，自动执行及完全托管支持批量修改操作。
-          - 批量先校验全部目标并完成授权，再最多4个并发执行。结果保持输入顺序，包含命令、主机、退出码及各条错误。
-          - 内置AI和MCP使用相同逻辑；更新工具说明及MCP能力标记。独立MCP遇到需要审批的批量会立即提示打开主窗口。
-          - 有先后依赖或操作同一文件、同一服务的命令仍按顺序分开执行。
-          - 主机、聊天、记忆、工作区和选择备份功能保留，数据目录与永久安卓签名保持现有设置。
+          - 输入命令前缀，后面用灰色显示匹配的历史命令；按右方向键或点击建议补全，仍需回车执行。
+          - Bash/Zsh从实际Shell历史读取已执行命令，每台服务器单独保存，同一机器多个终端标签共享；历史与AI记忆分开。
+          - 密码输入、编辑器按键不记录，包含敏感凭据的命令过滤。未支持的Shell继续普通终端操作，不猜测输入状态。
+          - 提示符钩子只在本次SSH会话生效，不写服务器Shell配置文件；中文跨SSH数据包保持完整。
+          - 已移除批量执行额外白名单，批量与单条命令共用当前权限和黑名单。
+          - 主机、聊天、记忆、工作区和四类选择备份保留，数据目录与永久安卓签名保持现有设置。
 
           全部构建和运行验收在GitHub完成。Windows使用ShellPilot-Windows-Setup.exe，便携更新使用shellpilot-app.exe，安卓使用ShellPilot-arm64.apk。
 
