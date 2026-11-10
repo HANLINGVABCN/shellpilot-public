@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';import fs from 'node:fs';import os from 
 import {spawn,execFileSync} from 'node:child_process';import {once} from 'node:events';import ssh2 from 'ssh2';
 assert(process.env.GITHUB_ACTIONS==='true','Latency fixtures run only in GitHub');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'sp-echo-')),key=path.join(root,'key');execFileSync('ssh-keygen',['-q','-t','ed25519','-N','','-f',key]);
-const clients=new Set(),timers=new Set(),shells=new Map();let server,socket;
+const clients=new Set(),timers=new Set(),shells=new Map();let server,socket,cleaning=false;
 const delay=(work,ms)=>{const timer=setTimeout(()=>{timers.delete(timer);work();},ms);timers.add(timer);};
 const ssh=new ssh2.Server({hostKeys:[fs.readFileSync(key)]},client=>{
- clients.add(client);client.on('close',()=>clients.delete(client));client.on('error',error=>{if(error.code!=='ECONNRESET')throw error;});let user='';
+ if(cleaning){client._sock?.destroy();return;}
+ clients.add(client);client.on('close',()=>clients.delete(client));client.on('error',error=>{if(!cleaning&&error.code!=='ECONNRESET')throw error;});let user='';
  client.on('authentication',context=>{user=context.username;if(user.startsWith('slow'))delay(()=>{try{context.accept();}catch{}},1500);else context.accept();});
  client.on('ready',()=>client.on('session',accept=>accept().on('pty',accept=>accept?.()).on('window-change',accept=>accept?.())
   .on('exec',(accept,reject,info)=>{const stream=accept();const send=()=>{stream.write(info.command.includes('$SHELL')?'/bin/sh':'fixture Linux');stream.exit(0);stream.end();};if(user==='metadata'&&!info.command.includes('$SHELL'))delay(send,1500);else send();})
@@ -37,11 +38,16 @@ try{
  send({type:'term-input',sessionId:'ready',data:'FINAL_ECHO'});await until(()=>outputs.get('ready')?.includes('FINAL_ECHO'));
  console.log('PASS: active PTY input is independent of slow connects and metadata; first echo='+Math.round(echoMs)+'ms, maximum='+Math.round(Math.max(...samples))+'ms; different sessions connect concurrently, duplicate/cancelled attaches remain correct');
 }finally{
- socket?.close();for(const timer of timers)clearTimeout(timer);
+ cleaning=true;socket?.close();for(const timer of timers)clearTimeout(timer);
+ // Stop only this fixture's backend before it can reconnect to the fixture listener.
+ if(server?.exitCode===null){
+  const exited=once(server,'exit');
+  if(process.platform==='win32'){execFileSync('taskkill.exe',['/PID',String(server.pid),'/T','/F'],{stdio:'ignore',timeout:8000});}else server.kill('SIGKILL');
+  await Promise.race([exited,new Promise((_,reject)=>{const timer=setTimeout(()=>reject(Error('Fixture backend did not terminate')),5000);timer.unref();})]);
+ }
  // Fixtures own these sockets; force their closure after all echo assertions.
  // Graceful disconnect can leave a paused Windows test socket alive until keepalive.
  for(const client of clients){client.end();client._sock?.destroy();}
  ssh.close();
- if(server?.exitCode===null){const exited=once(server,'exit');server.kill();await exited;}
  fs.rmSync(root,{recursive:true,force:true});
 }
