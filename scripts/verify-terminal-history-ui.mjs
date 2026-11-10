@@ -18,7 +18,7 @@ try{for(const mobile of [false,true])for(const zoom of [1,1.35]){
   if(data==='\r'){output(osc(active,'C')+'\r\n');typed='';cursor=0;return;}
   if(data==='\x03'){prompt();return;}
   if(data==='\x1b[D'){cursor=Math.max(0,cursor-1);output(data);return;}
-  if(data==='\x1b[C'){cursor=Math.min(typed.length,cursor+1);output(data);return;}
+  if(data==='\x1b[C'){if(cursor<typed.length){cursor++;output(data);}return;}
   if(data==='\x7f'){if(cursor>0){typed=typed.slice(0,cursor-1)+typed.slice(cursor);cursor--;output('\b \b');}return;}
   if(data==='\x1b')return;
   if(data.startsWith('\x1b[200~'))data=data.slice(6,-6);
