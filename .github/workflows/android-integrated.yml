@@ -76,6 +76,10 @@ jobs:
         env:
           SHELLPILOT_NATIVE_DIR: runtime-build/native
       - run: node scripts/patch-android.mjs
+      - name: Build isolated child-process boundary fixture
+        run: bash scripts/build-workspace-probe.sh
+        env:
+          ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973
       - run: npm run tauri -- android build --apk --target x86_64
         env:
           ANDROID_NDK_HOME: /usr/local/lib/android/sdk/ndk/27.0.12077973

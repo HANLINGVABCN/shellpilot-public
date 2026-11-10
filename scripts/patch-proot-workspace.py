@@ -35,6 +35,11 @@ path.write_text(text)
 source=root/'src/syscall/enter.c';text=source.read_text()
 definitions=''.join(p.read_text(errors='ignore') for p in (root/'src').rglob('*') if p.suffix in ['.h','.c'])
 policy='\n    if (getenv("SHELLPILOT_ROOT")) {\n'
+if 'PR_clone' in definitions:
+    policy+='        if (syscall_number==PR_clone && (peek_reg(tracee,CURRENT,SYSARG_1)&0x00800000UL)){status=-EACCES;goto end;}\n'
+if 'PR_clone3' in definitions:
+    # Let guest libc fall back to clone(), whose flags remain visible to PRoot.
+    policy+='        if (syscall_number==PR_clone3){status=-ENOSYS;goto end;}\n'
 for name in ['ptrace','process_vm_readv','process_vm_writev','io_uring_setup','open_by_handle_at','name_to_handle_at','bpf','perf_event_open','userfaultfd','execveat','mount','umount2','pivot_root','chroot','setns','unshare']:
     if 'PR_'+name in definitions:policy+='        if (syscall_number==PR_'+name+'){status=-EACCES;goto end;}\n'
 for name in ['kill','tkill','tgkill']:

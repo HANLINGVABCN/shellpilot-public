@@ -20,6 +20,13 @@ public final class IntegratedRuntimeTest extends Instrumentation{
    if(!call(service[0],new JSONObject().put("op","status")).getBoolean("installed"))throw new Exception("Failed download removed the old valid environment");
    String[] probes={"cat /host-rootfs"+canary.getPath(),"cat /proc/self/root"+canary.getPath(),"ln -s /host-rootfs"+canary.getPath()+" denied-link; cat denied-link","cat /dev/binder","kill -0 "+android.os.Process.myPid()};
    for(String probe:probes){JSONObject result=call(service[0],new JSONObject().put("op","action").put("name","workspace_exec").put("network",true).put("arguments",new JSONObject().put("command",probe).put("timeout",5000)));if(result.optInt("exitCode",0)==0||result.optString("stdout").contains("PRIVATE_CREDENTIAL_CANARY"))throw new Exception("Boundary probe escaped: "+probe+" "+result.toString());}
+   File probe=new File(context.getFilesDir(),"workspace/child-boundary-probe");
+   try{
+    try(InputStream input=new FileInputStream(new File(context.getApplicationInfo().nativeLibraryDir,"libworkspace_boundary_probe.so"));OutputStream output=new FileOutputStream(probe)){byte[] buffer=new byte[65536];int size;while((size=input.read(buffer))>=0)output.write(buffer,0,size);}
+    android.system.Os.chmod(probe.getPath(),0700);
+    JSONObject childResult=call(service[0],new JSONObject().put("op","action").put("name","workspace_exec").put("network",true).put("arguments",new JSONObject().put("command","./child-boundary-probe '/host-rootfs"+canary.getPath()+"'").put("timeout",5000)));
+    if(childResult.getInt("exitCode")!=0||!childResult.getString("stdout").contains("CHILD_PATH_POLICY_OK"))throw new Exception("Child-process boundary check failed: "+childResult.toString());
+   }finally{probe.delete();}
    JSONObject result=call(service[0],new JSONObject().put("op","action").put("name","workspace_exec").put("arguments",new JSONObject().put("command","printf OK > allowed.txt; cat allowed.txt; cat /etc/alpine-release").put("timeout",5000)));
    if(result.getInt("exitCode")!=0||!result.getString("stdout").contains("OK")||!result.getString("stdout").contains("3.24.4"))throw new Exception(result.toString());
    report.putString("stream","PASS: main-app credential canary exists and stays inaccessible through host-rootfs, proc-root, symlink and Binder; valid Linux files still work\n");finish(-1,report);
