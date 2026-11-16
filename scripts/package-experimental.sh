@@ -83,6 +83,14 @@ props.write_text(props.read_text()+'\nandroid.aapt2FromMavenOverride='+str(pathl
 PY
     SHELLPILOT_NATIVE_DIR="$PWD/runtime-build/native" node scripts/prepare-android-workspace.mjs
     node scripts/patch-android.mjs
+    export WRY_ANDROID_PACKAGE=app.shellpilot.client
+    export WRY_ANDROID_LIBRARY=shellpilot_app_lib
+    export WRY_ANDROID_KOTLIN_FILES_OUT_DIR="$PWD/src-tauri/gen/android/app/src/main/java/app/shellpilot/client/generated"
+    export TAURI_ANDROID_PROJECT_PATH="$PWD/src-tauri/gen/android"
+    export TAURI_ANDROID_PACKAGE_UNESCAPED=app.shellpilot.client
+    mkdir -p "$WRY_ANDROID_KOTLIN_FILES_OUT_DIR"
+    # Tauri 的代码生成缓存没有跟随新项目路径；只刷新安卓框架产物，保留其他依赖。
+    cargo clean --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android --package tauri
     nice -n 10 npm run tauri -- android build --apk --target aarch64
     python3 - <<'PY'
 import pathlib,zipfile
