@@ -32,6 +32,10 @@ case "$stage" in
     npm run build
     ;;
   windows)
+    if test -n "${SHELLPILOT_REUSE_WINDOWS_RUNNER:-}"; then
+      python3 scripts/reuse-windows-package.py
+      exit 0
+    fi
     unset RUSTFLAGS
     nice -n 10 npm run tauri -- build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
     installer="$CARGO_TARGET_DIR/x86_64-pc-windows-msvc/release/bundle/nsis/ShellPilot_1.0.0_x64-setup.exe"
@@ -89,8 +93,8 @@ PY
     export TAURI_ANDROID_PROJECT_PATH="$PWD/src-tauri/gen/android"
     export TAURI_ANDROID_PACKAGE_UNESCAPED=app.shellpilot.client
     mkdir -p "$WRY_ANDROID_KOTLIN_FILES_OUT_DIR"
-    # Tauri 的代码生成缓存没有跟随新项目路径；只刷新安卓框架产物，保留其他依赖。
-    cargo clean --manifest-path src-tauri/Cargo.toml --target aarch64-linux-android --package tauri
+    # 当前工程直接使用所选 Tauri 依赖的官方模板，不依赖旧缓存里的生成目录。
+    python3 scripts/prepare-android-codegen.py
     nice -n 10 npm run tauri -- android build --apk --target aarch64
     python3 - <<'PY'
 import pathlib,zipfile

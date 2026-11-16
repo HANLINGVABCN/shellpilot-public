@@ -10,6 +10,10 @@ on:
         description: '本次实验服务器专用运行器标签；填写后两端编译与永久签名全部在该服务器完成'
         required: false
         default: ''
+      experimental_windows_runner:
+        description: '可选：复用该实验运行器已完成的 Windows 安装包，先检查 Windows 源码完全一致'
+        required: false
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -220,6 +224,8 @@ jobs:
       - name: 校验公开源码并复用服务器依赖构建前端
         run: bash scripts/package-experimental.sh prepare
       - name: 在实验服务器编译 Windows x64 安装包
+        env:
+          SHELLPILOT_REUSE_WINDOWS_RUNNER: ${{ inputs.experimental_windows_runner }}
         run: bash scripts/package-experimental.sh windows
       - name: 在实验服务器编译 Android ARM64 安装包
         run: bash scripts/package-experimental.sh android

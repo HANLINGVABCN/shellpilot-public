@@ -28,7 +28,8 @@ for(const platform of ['windows','android']) {
 }
 const certificateSha256=sha256(fs.readFileSync(path.join(root,'android/ShellPilot-android.cer')));
 assert.equal(certificateSha256,'77c676dffaa6efd13a504529dcc52abd5634469e3a41d6f067dbf49bb85b95b3');
-const info={sourceRepository,sourceCommit,identifier:'app.shellpilot.client',version:'1.0.0',certificateSha256,frontend,verification,packages};
+const windowsReuse=fs.existsSync(path.join(root,'windows-reuse.json')) ? JSON.parse(fs.readFileSync(path.join(root,'windows-reuse.json'),'utf8')) : null;
+const info={sourceRepository,sourceCommit,identifier:'app.shellpilot.client',version:'1.0.0',certificateSha256,frontend,verification,packages,...(windowsReuse ? {windowsReuse} : {})};
 fs.writeFileSync(path.join(root,'build-info.json'),JSON.stringify(info,null,2)+'\n');
 fs.writeFileSync(path.join(root,'SHA256SUMS.txt'),packages.map(item=>item.sha256+'  '+item.platform+'/'+item.name).join('\n')+'\n');
 console.log(JSON.stringify(info));
