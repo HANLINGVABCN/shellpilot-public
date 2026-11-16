@@ -22,6 +22,7 @@ def windows_sources(directory):
         relevant = relevant or name in {"index.html", "package.json", "package-lock.json", "vite.config.mjs"}
         if relevant and not name.startswith("src-tauri/icons/android/"):
             result[name] = details.split()[2]
+    result["src-tauri/Cargo.lock"] = hashlib.sha256((Path(directory) / "src-tauri/Cargo.lock").read_bytes()).hexdigest()
     return result
 
 
@@ -48,7 +49,8 @@ def main():
         if "--verify-only" not in sys.argv:
             shutil.copyfile(packages / name, output / name)
         report.append({"name": name, "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)})
-    record = {"sourceCommit": git(source, "rev-parse", "HEAD"), "windowsSourcesIdentical": True, "packages": report}
+    record = {"sourceCommit": git(source, "rev-parse", "HEAD"), "windowsSourcesIdentical": True,
+              "cargoLockSha256": previous["src-tauri/Cargo.lock"], "packages": report}
     if "--verify-only" not in sys.argv:
         (current / "release-experimental/windows-reuse.json").write_text(json.dumps(record, indent=2))
     print(json.dumps(record))
