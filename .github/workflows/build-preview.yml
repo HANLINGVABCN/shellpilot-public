@@ -14,6 +14,10 @@ on:
         description: '可选：复用该实验运行器已完成的 Windows 安装包，先检查 Windows 源码完全一致'
         required: false
         default: ''
+      experimental_android_runner:
+        description: '可选：复用同一应用源码的安卓 APK，只调整静态加载器页对齐并重新签名'
+        required: false
+        default: ''
 permissions:
   contents: read
   actions: read
@@ -228,6 +232,8 @@ jobs:
           SHELLPILOT_REUSE_WINDOWS_RUNNER: ${{ inputs.experimental_windows_runner }}
         run: bash scripts/package-experimental.sh windows
       - name: 在实验服务器编译 Android ARM64 安装包
+        env:
+          SHELLPILOT_REUSE_ANDROID_RUNNER: ${{ inputs.experimental_android_runner }}
         run: bash scripts/package-experimental.sh android
       - name: 使用公开版永久证书签名并校验安卓安装包
         env:

@@ -62,6 +62,10 @@ PY
     rm -f "$out/windows/ShellPilot.exe" "$out/windows/WebView2Loader.dll"
     ;;
   android)
+    if test -n "${SHELLPILOT_REUSE_ANDROID_RUNNER:-}"; then
+      python3 scripts/reuse-android-package.py
+      exit 0
+    fi
     export RUSTFLAGS='-C link-arg=-Wl,-z,max-page-size=16384'
     npm run tauri -- android init
     mkdir -p build/experimental runtime-build/native
