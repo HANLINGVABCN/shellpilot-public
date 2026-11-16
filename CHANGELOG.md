@@ -1,6 +1,14 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.1。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.2。
+
+## [build-20261117-v1.0.2](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261117-v1.0.2) — 2026-11-17
+
+- 侧栏与 AI 入口调整到上角，采用 5×34 像素贴边竖条，鼠标悬停显示双箭头，手机直接点击。
+- 侧栏左上保留竖条收起键，右上直接显示 16 像素双箭头，没有竖条或底框，两边均可关闭侧栏。
+- 顶栏两侧各留 8 像素，标签可横向滚动，Windows AI 对话名与模型分两行；保留分栏拖拽、缩放后宽度恢复和终端特殊按键。
+- 正式折叠交互检查和 7 组既有界面回归通过；测试使用独立静态页面并模拟 API/WebSocket。
+- Windows x64 与 Android ARM64 安装包在实验服务器重新编译并校验，安卓原永久签名、版本代码增加和 16KB 页对齐通过，同签名旧版可覆盖更新。未进行本次真机安装或真实 Windows 程序启动验证。
 
 ## [build-20261117-v1.0.1](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261117-v1.0.1) — 2026-11-17
 
