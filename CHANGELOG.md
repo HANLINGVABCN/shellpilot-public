@@ -1,6 +1,13 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.0，下载时以 Release 标签区分构建。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.1。
+
+## [build-20261117-v1.0.1](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261117-v1.0.1) — 2026-11-17
+
+- 移除 AI 对话顶部 logo，两端标题栏保留对话和模型选择控件；修正源码已更新而公开安装包仍使用旧界面的问题。
+- 应用版本统一更新为 1.0.1，Windows 安装程序、便携包与 Android ARM64 APK 均在实验服务器重新编译并发布。
+- 保留公开版包名、永久安卓签名与用户数据接口，同签名旧版可覆盖更新；发布附件保留三个安装文件与 SHA256 校验和。
+- 安卓和两种 Windows 窗口宽度的模拟界面检查通过；两端嵌入本次无标识前端、APK 签名与架构、ARM64 16KB 页对齐及 GitHub 附件摘要已核验。未进行本次真机安装或真实 Windows 应用启动验证。
 
 ## build-20261110-android-integrated — 2026-11-10
 
