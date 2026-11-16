@@ -28,7 +28,7 @@ ShellPilot 是运行在自己电脑或安卓设备上的 SSH 工作台。你可�
 | 文件 | 用途 |
 | --- | --- |
 | [ShellPilot-Windows-Setup.exe](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest/download/ShellPilot-Windows-Setup.exe) | **Windows 首次使用推荐**，双击安装 |
-| [shellpilot-app.exe](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest/download/shellpilot-app.exe) | Windows 主程序；更新已有便携目录时，先退出应用再替换同名文件 |
+| [ShellPilot-portable.zip](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest/download/ShellPilot-portable.zip) | Windows 便携版；解压后运行 `ShellPilot.exe`，更新前先退出应用 |
 | [ShellPilot-arm64.apk](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest/download/ShellPilot-arm64.apk) | Android ARM64 安装包 |
 | [SHA256SUMS.txt](https://github.com/HANLINGVABCN/shellpilot-public/releases/latest/download/SHA256SUMS.txt) | 下载文件的 SHA256 校验值 |
 
