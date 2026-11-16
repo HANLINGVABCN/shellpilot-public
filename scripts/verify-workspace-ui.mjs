@@ -15,6 +15,7 @@ try {for(const mobile of [false,true]) {
  let installedCalls=0,releaseSave,saveFail=false;const saveGate=new Promise(resolve=>releaseSave=resolve),connections=[];const errors=[];
  page.on('dialog',()=>{throw Error('Unexpected browser dialog')});page.on('pageerror',error=>errors.push(error.message));
  await page.addInitScript(()=>{localStorage.setItem('shellpilot-last-view','work');localStorage.setItem('shellpilot-l1','workspace');localStorage.setItem('shellpilot-chat-open','hidden');});
+ await page.routeWebSocket('**/ws',()=>{});
  await page.routeWebSocket('**/api/workspace/terminal/ws?*',socket=>{connections.push(new URL(socket.url()).searchParams.get('path'));socket.send('workspace shell ready\r\n');socket.onMessage(()=>socket.send('independent terminal output\r\n'));});
  await page.route('**/api/**',async route=>{
   const request=route.request(),url=new URL(request.url()),p=url.pathname;let value=[];

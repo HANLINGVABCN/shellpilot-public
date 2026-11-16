@@ -1,35 +1,64 @@
-#app { position: relative; }
+#app, .main, .sidebar, .chat-panel { position: relative; }
 #app:not(.android-app) > .main { min-width: var(--sp-main-min-width, 340px); }
 .drag-handle-v { flex-shrink: 0; touch-action: none; }
 .nav-item.dragging, .tab.dragging { transform: none; transition: none; }
 .workspace-panel:not(.workspace-page) { display: flex; flex-direction: column; height: 40%; min-height: 120px; }
-.sidebar, .chat-panel { position: relative; }
+
 .edge-handle.edge-handle {
-  position: absolute; top: 50%; transform: translateY(-50%); z-index: 95;
-  display: flex; align-items: center; justify-content: center;
-  width: 12px; min-width: 12px; height: 32px; min-height: 32px; padding: 0; margin: 0;
+  position: relative; top: auto; z-index: 95; flex-shrink: 0;
+  display: flex; align-items: flex-start; width: 8px; min-width: 8px;
+  height: 44px; min-height: 44px; padding: 2px 0 0; margin: 0;
   background: transparent !important; border: 0 !important; box-shadow: none !important;
-  color: var(--muted); cursor: pointer; touch-action: manipulation;
+  color: var(--muted); cursor: pointer; touch-action: manipulation; overflow: visible;
 }
-.edge-grip { position: absolute; width: 2px; height: 16px; border-radius: 1px; background: currentColor; opacity: .24; }
-.edge-chevron { position: absolute; opacity: 0; }
-.edge-grip, .edge-chevron { transition: opacity .15s; }
-.edge-viewport-left { left: 0; }
-.edge-viewport-right { right: 0; }
-.edge-handle.edge-panel-right { right: -6px; }
-.edge-panel-left { left: -6px; }
-#app > .edge-handle { z-index: 60; }
-.edge-handle:focus-visible { outline: none; }
-.edge-handle:focus-visible .edge-chevron, .edge-handle:active .edge-chevron { opacity: .85; }
-.edge-handle:focus-visible .edge-grip, .edge-handle:active .edge-grip { opacity: 0; }
+.edge-grip { display: block; flex-shrink: 0; width: 5px; height: 34px; background: currentColor; opacity: .5; }
+.edge-hover {
+  position: absolute; top: 7px; display: flex; align-items: center; justify-content: center;
+  width: 12px; height: 24px; box-sizing: border-box; border: 1px solid var(--border);
+  border-radius: 2px; background: var(--panel); color: var(--text);
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s;
+}
+.edge-hover .edge-symbol { width: 8px; height: 8px; }
+.edge-handle[data-direction="left"] .edge-symbol { transform: rotate(180deg); }
+.edge-inline-left, .edge-corner-left { justify-content: flex-start; }
+.edge-inline-right, .edge-corner-right { justify-content: flex-end; }
+.edge-inline-left .edge-hover, .edge-corner-left .edge-hover { left: 0; }
+.edge-inline-right .edge-hover, .edge-corner-right .edge-hover { right: 0; }
+.edge-handle.edge-corner-left { position: absolute; top: 0; left: 0; }
+.edge-handle.edge-corner-right { position: absolute; top: 0; right: 0; }
+.edge-handle.edge-direct { width: 24px; min-width: 24px; padding: 11px 2px 0 0; }
+.edge-direct .edge-symbol { width: 16px; height: 16px; opacity: .7; }
+.edge-direct:hover .edge-symbol, .edge-direct:focus-visible .edge-symbol { opacity: 1; color: var(--text); }
+.edge-handle:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.edge-handle:focus-visible .edge-grip { opacity: 0; }
+.edge-handle:focus-visible .edge-hover { opacity: 1; visibility: visible; pointer-events: auto; }
+.edge-handle:active .edge-grip { opacity: 1; }
 @media (hover: hover) {
-  .edge-handle:hover .edge-chevron { opacity: .8; }
   .edge-handle:hover .edge-grip { opacity: 0; }
+  .edge-handle:hover .edge-hover { opacity: 1; visibility: visible; pointer-events: auto; }
 }
-.android-app .edge-handle.edge-handle { width: 16px; min-width: 16px; height: 44px; min-height: 44px; }
-.android-app .edge-handle.edge-panel-right { right: -8px; }
+
+.tabbar.fold-toolbar { display: grid; grid-template-columns: var(--sp-header-left, 0px) minmax(0, 1fr) var(--sp-header-right, 0px); gap: 0; padding: 0; }
+.fold-toolbar.has-side-entry { --sp-header-left: 8px; }
+.fold-toolbar.has-ai-entry { --sp-header-right: 8px; }
+.fold-toolbar > .edge-inline-left { grid-column: 1; grid-row: 1; align-self: start; }
+.fold-toolbar > .edge-inline-right { grid-column: 3; grid-row: 1; align-self: start; }
+.fold-toolbar > .tab-left { grid-column: 2; grid-row: 1; min-width: 0; height: 44px; padding: 0 10px; }
+.fold-toolbar .tabs { width: max-content; flex-shrink: 0; }
+.android-app .fold-toolbar > .tab-left { height: 46px; }
+.page-fold-controls { position: absolute; inset: 0 0 auto; height: 44px; pointer-events: none; z-index: 30; }
+.page-fold-controls > .edge-handle { pointer-events: auto; }
+.android-app .sidebar .edge-corner-left, .android-app .sidebar .edge-corner-right { top: env(safe-area-inset-top, 0px); }
 .android-app .sidebar .logo { min-height: 68px; }
-.mobile-header { grid-template-columns: minmax(0, 1fr); padding-left: 14px; padding-right: 14px; }
-@media (prefers-reduced-motion: reduce) {
-  .edge-grip, .edge-chevron { transition: none; }
-}
+
+.mobile-header { grid-template-columns: 8px minmax(0, 1fr) 8px; gap: 0; padding: 0; }
+.mobile-header > .edge-inline-left { grid-column: 1; grid-row: 1; align-self: start; }
+.mobile-header > .mobile-heading { grid-column: 2; grid-row: 1; padding: 0 10px; }
+.mobile-header > .edge-inline-right { grid-column: 3; grid-row: 1; align-self: start; }
+
+.chat-head.has-collapse { height: auto; min-height: 82px; grid-template-columns: minmax(0, 1fr) 8px; gap: 0; padding: 0 0 8px 12px; }
+.chat-head.has-collapse > .chat-menu-wrap { grid-column: 1; grid-row: 1; margin-right: 4px; }
+.chat-head.has-collapse > .model-wrap { grid-column: 1 / 3; grid-row: 2; margin-right: 12px; min-width: 0; }
+.chat-head.has-collapse > .edge-inline-right { grid-column: 2; grid-row: 1; align-self: start; }
+.chat-head.has-collapse .chat-model { width: 100%; }
+@media (prefers-reduced-motion: reduce) { .edge-hover { transition: none; } }

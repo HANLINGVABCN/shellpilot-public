@@ -559,8 +559,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
 
   return (
     <div id="ai-panel" className="chat-panel" style={{ width, minWidth: width, '--sp-chat-width':`${width}px` }} inert={inert}>
-      {onCollapse && <EdgeHandle panel="ai" expanded={true} placement="edge-panel-left" onClick={onCollapse} />}
-      <div className="chat-head">
+      <div className={'chat-head' + (onCollapse ? ' has-collapse' : '')}>
         <div className="chat-menu-wrap">
           <button className="chat-model chat-title-btn" title="对话记录" onClick={() => { const v = !chatMenu; setChatMenu(v); if (v) loadChats(); }}>
             # {chatTitle} ▾
@@ -610,6 +609,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
             </div>
           )}
         </div>
+        {onCollapse && <EdgeHandle panel="ai" expanded={true} placement="edge-inline-right" onClick={onCollapse} />}
       </div>
 
       {(busy || paused || queue.length>0) && <div className="task-progress"><span>{paused?(pauseReady?'已暂停':'完成当前操作后暂停'):progress?.phase==='tools'?`执行工具（${progress.tools||1}）`:'思考与生成'}{progress && (progress.maxSteps ? ` · ${progress.step}/${progress.maxSteps} 轮` : ` · 第 ${progress.step} 轮`)}</span><div className="queue-actions"><button className="btn btn-sm" onClick={()=>ws.send({type:paused?'chat-resume':'chat-pause'})}>{paused?'继续':'暂停'}</button>{busy && <button className="btn btn-sm danger" onClick={() => ws.send({type:'chat-stop'})}>停止当前任务</button>}</div></div>}

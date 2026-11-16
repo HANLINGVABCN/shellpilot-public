@@ -485,10 +485,18 @@ export default function App() {
     if (android) { setMobileSidebarOpen(false); setMobileChatOpen(false); }
   };
 
+  const sidebarShown = android ? mobileSidebarOpen : sidebarOpen;
+  const aiShown = android ? mobileChatOpen : chatOpen;
+  const openSidebar = android ? () => setMobileSidebarOpen(true) : toggleSidebar;
+  const toggleAI = () => android ? setMobileChatOpen((value) => !value) : setChatOpen((value) => !value);
+  const showSideEntry = !sidebarShown;
+  const showAIEntry = !aiShown && !storageError;
+
   return (
     <div id="app" className={android ? 'android-app' + (mobileSidebarOpen ? ' mobile-sidebar-open' : '') + (mobileChatOpen ? ' mobile-chat-open' : '') + (keyboardOpen ? ' keyboard-open' : '') : undefined} onClickCapture={openWebLink} onAuxClickCapture={openWebLink}>
       {android && (view !== 'work' || mobileChatOpen) && (
-        <MobileHeader title={mobileChatOpen ? 'AI 助手' : 'ShellPilot'} serversOpen={mobileSidebarOpen} />
+        <MobileHeader title={mobileChatOpen ? 'AI 助手' : 'ShellPilot'} serversOpen={mobileSidebarOpen}
+          onServers={openSidebar} chatOpen={mobileChatOpen} onChat={toggleAI} showChat={!storageError} />
       )}
       {android && mobileSidebarOpen && <button className="mobile-scrim" aria-label="关闭侧栏" tabIndex={-1} onClick={() => setMobileSidebarOpen(false)} />}
       {(sidebarOpen || android) && (
@@ -516,21 +524,19 @@ export default function App() {
         </>
       )}
 
-      {(android ? !mobileSidebarOpen : !sidebarOpen) && (
-        <EdgeHandle panel="sidebar" expanded={false} placement="edge-viewport-left" onClick={android ? () => setMobileSidebarOpen(true) : toggleSidebar} />
-      )}
-      {(android || !chatOpen) && !storageError && (
-        <EdgeHandle panel="ai" expanded={android ? mobileChatOpen : chatOpen} placement="edge-viewport-right" onClick={() => android ? setMobileChatOpen(!mobileChatOpen) : setChatOpen(!chatOpen)} />
-      )}
-
       <div className="main" inert={android && mobileSidebarOpen ? '' : undefined}>
+        {!android && view !== 'work' && <div className="page-fold-controls">
+          {showSideEntry && <EdgeHandle panel="sidebar" expanded={false} placement="edge-corner-left" onClick={openSidebar} />}
+          {showAIEntry && <EdgeHandle panel="ai" expanded={false} placement="edge-corner-right" onClick={toggleAI} />}
+        </div>}
 
         {storageError ? <StorageIssue error={storageError} onRecovered={()=>{setStorageError('');loadHosts();window.dispatchEvent(new Event('shellpilot-hosts-changed'));}}/> : view === 'home' ? (
           <HomeView onOpenHost={openMonitor} onOpenIdentity={openFromSidebar(openTerminal)} connectionMap={connectionMap} />
         ) : view === 'work' ? (
           <>
-            {/* 顶上一行：终端 / 性能监控（长按拖动调顺序）+ AI 开关 */}
-            <div className="tabbar">
+            {/* 两端入口各留 8px，标签在剩余空间内滚动。 */}
+            <div className={'tabbar fold-toolbar' + (showSideEntry ? ' has-side-entry' : '') + (showAIEntry ? ' has-ai-entry' : '')}>
+              {showSideEntry && <EdgeHandle panel="sidebar" expanded={false} placement="edge-inline-left" onClick={openSidebar} />}
               <div className="tab-left">
                 <div className="tabs" ref={l1TabsRef} title="长按拖动可调整顺序，第一位的为进入工作台时的默认页">
                   {l1Order.map((id) => {
@@ -549,6 +555,7 @@ export default function App() {
                   })}
                 </div>
               </div>
+              {showAIEntry && <EdgeHandle panel="ai" expanded={false} placement="edge-inline-right" onClick={toggleAI} />}
             </div>
 
             {/* 二级标签条：终端 / 监控同一套交互（点击切换、×关闭、条内拖拽排序、＋新开） */}

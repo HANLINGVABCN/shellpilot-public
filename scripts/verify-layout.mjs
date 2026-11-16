@@ -19,6 +19,7 @@ try {
     });
     page.on('pageerror', (error) => { errors.push(error.message); console.error(error.stack); });
     page.on('console', (message) => { if (message.type() === 'error') console.error(message.text()); });
+    await page.routeWebSocket('**/ws',()=>{});
     await page.route('**/api/**', async (route) => {
       const url = new URL(route.request().url()).pathname;
       let data = [];
@@ -221,7 +222,8 @@ try {
     assert.equal(await page.locator('.chat-head img').count(),0);
     const headerControls=await page.locator('.chat-head > div').evaluateAll(elements=>elements.map(element=>element.getBoundingClientRect().toJSON()));
     assert.equal(headerControls.length,2);
-    assert(headerControls[1].x>=headerControls[0].x+headerControls[0].width,'Conversation and model controls must stay in separate columns');
+    if(width<760)assert(headerControls[1].x>=headerControls[0].x+headerControls[0].width,'Mobile conversation and model controls must stay in separate columns');
+    else assert(headerControls[1].y>=headerControls[0].y+headerControls[0].height,'Desktop model selector must fit below the conversation selector and corner control');
     await page.locator('.chat-title-btn').click();
     await page.getByRole('button',{name:'删除对话 对话2',exact:true}).click();
     const historyBounds=await page.locator('.chat-menu').boundingBox();

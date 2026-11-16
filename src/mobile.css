@@ -62,7 +62,6 @@ html.sp-android { height: 100%; -webkit-text-size-adjust: 100%; }
 }
 .android-app.mobile-sidebar-open .sidebar { transform: translateX(0); visibility: visible; pointer-events: auto; }
 .android-app .sidebar .logo { padding: 14px 6px; gap: 10px; }
-.android-app .side-hide { min-width: 36px; min-height: 40px; justify-content: center; }
 .android-app .sidebar .nav { display: flex; }
 .android-app .sidebar .nav-item { min-height: 42px; }
 .android-app .side-label { font-size: 11px; }

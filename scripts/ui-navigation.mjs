@@ -9,7 +9,7 @@ export async function showMobilePage(page, name) {
     if (await open.isVisible()) await open.click();
     return;
   }
-  const open=page.locator('#app > .edge-viewport-left[data-panel="sidebar"]');
+  const open=page.getByRole('button',{name:'展开侧栏',exact:true});
   if (await open.isVisible()) await open.click();
   if (name === '服务器') return;
   const labels={'总览':'机器总览','工作台':'工作台','设置':'配置'};

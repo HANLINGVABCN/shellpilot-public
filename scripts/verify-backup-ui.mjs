@@ -6,6 +6,7 @@ try{for(const mobile of [false,true]){
  let detected={hosts:2,providers:1,chats:3,memories:4},importBody=null,exportBody=null,previewCalls=0,importCalls=0;
  const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',()=>{throw Error('Unexpected browser confirmation')});
  await page.addInitScript(()=>localStorage.setItem('shellpilot-last-view','settings'));
+ await page.routeWebSocket('**/ws',()=>{});
  await page.route('**/api/**',async route=>{
   const request=route.request(),p=new URL(request.url()).pathname;let value=[];
   if(p==='/api/settings')value={providers:[],models:[],params:{}};

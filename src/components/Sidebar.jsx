@@ -131,8 +131,8 @@ export default function Sidebar({
         </div>
       </div>
 
-      <EdgeHandle panel="sidebar" expanded={mobile ? mobileOpen : true} placement="edge-viewport-left" className="side-edge-hide" onClick={onHide} />
-      <EdgeHandle panel="sidebar" expanded={mobile ? mobileOpen : true} placement="edge-panel-right" className="side-hide" onClick={onHide} />
+      <EdgeHandle panel="sidebar" expanded={true} placement="edge-corner-left" className="side-edge-hide" onClick={onHide} />
+      <EdgeHandle panel="sidebar" expanded={true} placement="edge-corner-right" direct label="从右侧收起侧栏" onClick={onHide} />
 
       <div className="nav" ref={navRef} title="长按拖动可调整顺序，第一位的为默认页">
         {order.map((id) => {

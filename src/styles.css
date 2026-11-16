@@ -64,14 +64,6 @@ input, textarea, select, button { font-family: inherit; }
 }
 .logo-name { font-weight: 700; font-size: 15.5px; letter-spacing: 0.2px; font-family: var(--mono); }
 .logo-sub { font-size: 10.5px; color: var(--muted); letter-spacing: 0.5px; }
-.side-hide {
-  margin-left: auto;
-  background: none; border: 1px solid transparent; color: var(--faint);
-  cursor: pointer; padding: 4px; border-radius: 5px;
-  transition: all 0.15s; display: flex; align-items: center;
-}
-.side-hide:hover { color: var(--accent); background: var(--panel2); }
-
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav-item {
   display: flex; align-items: center; gap: 9px;
