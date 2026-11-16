@@ -1,9 +1,10 @@
+import {showMobilePage,platformOptions} from './ui-navigation.mjs';
 // Synthetic browser fixtures only; no user hosts, files or credentials.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {chromium} from 'playwright';
 fs.mkdirSync('layout-screenshots',{recursive:true});
-const browser=await chromium.launch();
+const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 let activePage;
 const settings={providers:[{id:'p',name:'Demo'}],models:[{id:'m',providerId:'p',name:'demo'}],defaultModelId:'m',params:{temperature:0.3,maxTokens:0,historyLimit:0,maxSteps:0,contextChars:0},systemPrompt:'演示',autoMemory:false};
 const host={id:'demo',name:'演示节点',host:'demo.example.com',username:'demo',port:22};
@@ -58,10 +59,10 @@ async function assertMouseRow(page){
 }
 try{
   for(const scale of [0.75,1,1.25,1.5]){
-    const page=await browser.newPage({viewport:{width:1440,height:900},locale:'zh-CN',deviceScaleFactor:1.25});activePage=page;
+    const page=await browser.newPage({...platformOptions(1440),viewport:{width:1440,height:900},locale:'zh-CN',deviceScaleFactor:1.25});activePage=page;
     await setup(page,{terminal:true});
     await page.addInitScript((scale)=>localStorage.setItem('shellpilot-zoom',String(scale)),scale);
-    await page.goto('http://127.0.0.1:4173');
+    await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
     await assertMouseRow(page);
     const size=await page.locator('.stage-pane.show .xterm-screen').boundingBox();
     assert(size.height>200,'Neutral zoom terminal must fill available workspace');
@@ -70,10 +71,10 @@ try{
     await page.screenshot({path:`layout-screenshots/terminal-selection-${scale}.png`});await page.close();
   }
   for(const width of [390,1040]){
-    const page=await browser.newPage({viewport:{width,height:850},locale:'zh-CN'});activePage=page;
+    const page=await browser.newPage({...platformOptions(width),viewport:{width,height:850},locale:'zh-CN'});activePage=page;
     const {send,linkCalls}=await setup(page,{chat:true});
-    await page.goto('http://127.0.0.1:4173');
-    if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+    await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
+    if(width<760)await showMobilePage(page,'AI');
     await page.getByRole('link',{name:'外部文档',exact:true}).waitFor();
     const input=page.getByRole('textbox',{name:'AI 任务输入框',exact:true});
     const edge=page.getByRole('separator',{name:'调整 AI 输入框高度',exact:true});
@@ -99,7 +100,7 @@ try{
     const preferenceKey=`shellpilot-composer-height-${width<760?'mobile':'desktop'}`;
     assert.equal(await page.evaluate((key)=>Number(localStorage.getItem(key)),preferenceKey),preferred,'Finished resize must save the selected size');
     await page.reload();
-    if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+    if(width<760)await showMobilePage(page,'AI');
     await page.getByRole('link',{name:'外部文档',exact:true}).waitFor();
     assert(Math.abs((await input.boundingBox()).height-preferred)<2,'Reload restores the manually selected editor height');
     await page.setViewportSize({width,height:430});

@@ -10,7 +10,11 @@ import ChatPanel from './components/ChatPanel.jsx';
 import SettingsView from './components/SettingsView.jsx';
 import HomeView from './components/HomeView.jsx';
 import { loadOrder, createSortable, makeClickSuppressor } from './sortable.js';
-import { PanelLeftIcon, PanelRightIcon, PromptIcon, ChartIcon, PinIcon, FolderIcon } from './icons.jsx';
+import { PromptIcon, ChartIcon, PinIcon, FolderIcon } from './icons.jsx';
+import { useAndroidViewport } from './android.js';
+import usePanelLayout from './usePanelLayout.js';
+import { MobileHeader } from './components/MobileHeader.jsx';
+import EdgeHandle from './components/EdgeHandle.jsx';
 import FileManager from './components/FileManager.jsx';
 import HostIdentityPrompt from './components/HostIdentityPrompt.jsx';
 import WorkspacePanel from './components/WorkspacePanel.jsx';
@@ -54,14 +58,17 @@ const loadActiveId = (activeKey, list) => {
 };
 
 export default function App() {
-  const [mobile, setMobile] = useState(() => window.matchMedia('(max-width: 760px)').matches);
-  const [mobilePage, setMobilePage] = useState('main');
+  const { android, keyboardOpen } = useAndroidViewport();
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 760px)');
-    const changed = () => setMobile(query.matches);
-    query.addEventListener('change', changed);
-    return () => query.removeEventListener('change', changed);
-  }, []);
+    if (!android || !mobileSidebarOpen) return;
+    const close = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); setMobileSidebarOpen(false); }
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [android, mobileSidebarOpen]);
   const [hosts, setHosts] = useState([]);
   const [hostsLoaded, setHostsLoaded] = useState(false);
   const [storageError,setStorageError]=useState('');
@@ -220,76 +227,30 @@ export default function App() {
     onDragEnd: (dragged) => { setMonDragId(null); if (dragged) monSuppress.current.suppress(); }
   });
 
-  // 左右两栏宽度（可拖拽，记忆在 localStorage）
-  const [chatW, setChatW] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('shellpilot-widths') || '{}').chat || 390; } catch { return 390; }
-  });
-  const [sideW, setSideW] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('shellpilot-widths') || '{}').side || 244; } catch { return 244; }
-  });
   const [sidebarOpen, setSidebarOpen] = useState(() => localStorage.getItem('shellpilot-sidebar') !== 'hidden');
   const toggleSidebar = () => setSidebarOpen((v) => {
-    localStorage.setItem('shellpilot-sidebar', v ? 'hidden' : 'open');
+    try { localStorage.setItem('shellpilot-sidebar', v ? 'hidden' : 'open'); } catch {}
     return !v;
   });
-
-  const beginResize = (e, which) => {
-    e.preventDefault();
-    const isChat = which === 'chat';
-    const startW = isChat ? chatW : sideW;
-    const startX = e.clientX;
-    let last = startW;
-    // 基本不限制拖拽范围，只挡住拖出屏幕（最小留一点显示拖拽把手）
-    const min = 60, max = Math.max(min, window.innerWidth - 260);
-    const move = (ev) => {
-      const delta = ev.clientX - startX;
-      last = Math.min(max, Math.max(min, isChat ? startW - delta : startW + delta));
-      isChat ? setChatW(last) : setSideW(last);
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-      document.body.classList.remove('dragging');
-      try {
-        const prev = JSON.parse(localStorage.getItem('shellpilot-widths') || '{}');
-        localStorage.setItem('shellpilot-widths', JSON.stringify({ ...prev, [isChat ? 'chat' : 'side']: last }));
-      } catch {}
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-    document.body.classList.add('dragging');
-  };
+  const { sideW, chatW, beginResize } = usePanelLayout({ android, sidebarOpen, chatOpen: chatOpen && !storageError });
 
   const loadHosts = () => api('/hosts').then((list) => { setHosts(list); setHostsLoaded(true); }).catch(() => {});
   useEffect(() => { loadHosts(); }, []);
   useEffect(() => ws.on('hosts-changed', loadHosts), []);
 
-  // 全局界面缩放（配置页里选择，作用于整个软件，记住选择）。
-  // 叠加窗口自适应：布局设计宽 844，窗口宽度不足(844×偏好)时整体再缩，
-  // 保证任何窗口尺寸下四边贴合、内容永不被挤出。
+  // 桌面视口高度继续跟随窗口；安卓软键盘高度由 useAndroidViewport 管理。
   useEffect(() => {
-    const apply = () => {
-      const pref = parseFloat(localStorage.getItem('shellpilot-zoom') || '1');
-      const u = Number.isFinite(pref) && pref > 0 ? pref : 1;
-      const total = window.matchMedia('(max-width: 760px)').matches ? 1 : Math.min(1.5, Math.max(0.75, u), window.innerWidth / 844);
-      document.documentElement.style.zoom = total;
-      document.documentElement.style.setProperty('--sp-ui-zoom', String(total));
-    };
-    apply();
-    window.addEventListener('resize', apply);
-    window.addEventListener('shellpilot-zoom', apply);
+    if (android) return;
     const viewport = window.visualViewport;
     const fitHeight = () => document.documentElement.style.setProperty('--sp-viewport-height', `${viewport?.height || window.innerHeight}px`);
     fitHeight();
     viewport?.addEventListener('resize', fitHeight);
     window.addEventListener('resize', fitHeight);
     return () => {
-      window.removeEventListener('resize', apply);
-      window.removeEventListener('shellpilot-zoom', apply);
       viewport?.removeEventListener('resize', fitHeight);
       window.removeEventListener('resize', fitHeight);
     };
-  }, []);
+  }, [android]);
 
   // 导入配置后刷新机器列表
   useEffect(() => {
@@ -514,27 +475,33 @@ export default function App() {
     }
   }
 
+  const mobileWorkActive = !android || (!mobileChatOpen && !mobileSidebarOpen && !hostModal);
+  const navigate = (next) => {
+    setView(next);
+    if (android) { setMobileSidebarOpen(false); setMobileChatOpen(false); }
+  };
+  const openFromSidebar = (open) => (...args) => {
+    open(...args);
+    if (android) { setMobileSidebarOpen(false); setMobileChatOpen(false); }
+  };
+
   return (
-    <div id="app" className={mobile ? `mobile-layout mobile-${mobilePage}` : ''} onClickCapture={openWebLink} onAuxClickCapture={openWebLink}>
-      {mobile && (
-        <nav className="mobile-nav" aria-label="主导航">
-          <button className={mobilePage === 'hosts' ? 'on' : ''} onClick={() => setMobilePage('hosts')}>服务器</button>
-          <button className={mobilePage === 'main' && view === 'home' ? 'on' : ''} onClick={() => { setMobilePage('main'); setView('home'); }}>总览</button>
-          <button className={mobilePage === 'main' && view === 'work' ? 'on' : ''} onClick={() => { setMobilePage('main'); setView('work'); }}>工作台</button>
-          <button className={mobilePage === 'chat' ? 'on' : ''} onClick={() => { setMobilePage('chat'); setChatOpen(true); }}>AI</button>
-          <button className={mobilePage === 'main' && view === 'settings' ? 'on' : ''} onClick={() => { setMobilePage('main'); setView('settings'); }}>设置</button>
-        </nav>
+    <div id="app" className={android ? 'android-app' + (mobileSidebarOpen ? ' mobile-sidebar-open' : '') + (mobileChatOpen ? ' mobile-chat-open' : '') + (keyboardOpen ? ' keyboard-open' : '') : undefined} onClickCapture={openWebLink} onAuxClickCapture={openWebLink}>
+      {android && (view !== 'work' || mobileChatOpen) && (
+        <MobileHeader title={mobileChatOpen ? 'AI 助手' : 'ShellPilot'} serversOpen={mobileSidebarOpen} />
       )}
-      {(sidebarOpen || mobile) && (
+      {android && mobileSidebarOpen && <button className="mobile-scrim" aria-label="关闭侧栏" tabIndex={-1} onClick={() => setMobileSidebarOpen(false)} />}
+      {(sidebarOpen || android) && (
         <>
           <Sidebar
             width={sideW}
-            view={view} setView={setView} onHide={toggleSidebar}
+            view={view} setView={navigate} onHide={android ? () => setMobileSidebarOpen(false) : toggleSidebar}
+            mobile={android} mobileOpen={mobileSidebarOpen}
             hosts={hosts} probeMap={connectionMap} dataUnavailable={!!storageError}
             termHostIds={new Set([...termSessions.map((s) => s.hostId), ...monSessions.map((s) => s.hostId), ...fileSessions.map((s) => s.hostId)])}
-            onOpenTerminal={(...args) => { openTerminal(...args); setMobilePage('main'); }}
-            onOpenMonitor={(...args) => { openMonitor(...args); setMobilePage('main'); }}
-            onOpenFiles={(...args) => { openFiles(...args); setMobilePage('main'); }}
+            onOpenTerminal={openFromSidebar(openTerminal)}
+            onOpenMonitor={openFromSidebar(openMonitor)}
+            onOpenFiles={openFromSidebar(openFiles)}
             onAdd={() => setHostModal({})}
             onEdit={(h) => setHostModal(h)}
             onDelete={delHost}
@@ -545,27 +512,21 @@ export default function App() {
               });
             }}
           />
-          <div className="drag-handle-v" onMouseDown={(e) => beginResize(e, 'side')} title="拖拽调整宽度" />
+          {!android && <div className="drag-handle-v" onPointerDown={(e) => beginResize(e, 'side')} title="拖拽调整侧栏宽度" />}
         </>
       )}
 
-      {!sidebarOpen && (
-        <button className="sidebar-tab" title="展开侧栏" onClick={toggleSidebar}><PanelLeftIcon size={13} /></button>
+      {(android ? !mobileSidebarOpen : !sidebarOpen) && (
+        <EdgeHandle panel="sidebar" expanded={false} placement="edge-viewport-left" onClick={android ? () => setMobileSidebarOpen(true) : toggleSidebar} />
+      )}
+      {(android || !chatOpen) && !storageError && (
+        <EdgeHandle panel="ai" expanded={android ? mobileChatOpen : chatOpen} placement="edge-viewport-right" onClick={() => android ? setMobileChatOpen(!mobileChatOpen) : setChatOpen(!chatOpen)} />
       )}
 
-      <div className="main">
-        {view !== 'work' && (
-          <button
-            className={'btn btn-sm ai-toggle ai-float' + (chatOpen ? ' on' : '')}
-            title={chatOpen ? '收起 AI 对话' : '展开 AI 对话'}
-            onClick={() => { setChatOpen(!chatOpen); if (mobile) { setChatOpen(true); setMobilePage('chat'); } }}
-          >
-            <PanelRightIcon /> AI
-          </button>
-        )}
+      <div className="main" inert={android && mobileSidebarOpen ? '' : undefined}>
 
         {storageError ? <StorageIssue error={storageError} onRecovered={()=>{setStorageError('');loadHosts();window.dispatchEvent(new Event('shellpilot-hosts-changed'));}}/> : view === 'home' ? (
-          <HomeView onOpenHost={openMonitor} onOpenIdentity={(hostId)=>{openTerminal(hostId);setMobilePage('main');}} connectionMap={connectionMap} />
+          <HomeView onOpenHost={openMonitor} onOpenIdentity={openFromSidebar(openTerminal)} connectionMap={connectionMap} />
         ) : view === 'work' ? (
           <>
             {/* 顶上一行：终端 / 性能监控（长按拖动调顺序）+ AI 开关 */}
@@ -587,15 +548,6 @@ export default function App() {
                   );
                   })}
                 </div>
-              </div>
-              <div className="tab-right">
-                <button
-                  className={'btn btn-sm ai-toggle' + (chatOpen ? ' on' : '')}
-                  title={chatOpen ? '收起 AI 对话' : '展开 AI 对话'}
-                  onClick={() => { setChatOpen(!chatOpen); if (mobile) { setChatOpen(true); setMobilePage('chat'); } }}
-                >
-                  <PanelRightIcon /> AI
-                </button>
               </div>
             </div>
 
@@ -735,12 +687,13 @@ export default function App() {
                 )}
                 <HostIdentityPrompt hostId={activeWorkHost} hosts={hosts} />
                 <div className="stage-content">
-                {(workspaceOpened||l1==='workspace')&&<div className={'stage-pane'+(l1==='workspace'?' show':'')}><WorkspacePanel fullPage active={l1==='workspace'}/></div>}
+                {(workspaceOpened||l1==='workspace')&&<div className={'stage-pane'+(l1==='workspace'?' show':'')}><WorkspacePanel fullPage active={l1==='workspace'&&mobileWorkActive} keyboardOpen={keyboardOpen}/></div>}
                 {l1 === 'terminal' && termSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeTerm === s.id ? ' show' : '')}>
                     <TerminalView
                       session={s}
-                      active={activeTerm === s.id}
+                      active={activeTerm === s.id && mobileWorkActive}
+                      mobile={android} keyboardOpen={keyboardOpen}
                       pendingCwd={pendingCwds[s.id]}
                       onClearPendingCwd={() => setPendingCwds((prev) => {
                         if (!prev[s.id]) return prev;
@@ -756,7 +709,7 @@ export default function App() {
                 )}
                 {l1 === 'monitor' && monSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeMon === s.id ? ' show' : '')}>
-                    <MonitorView hostId={s.hostId} active={activeMon === s.id} connection={connectionMap[s.hostId]} />
+                    <MonitorView hostId={s.hostId} active={activeMon === s.id && mobileWorkActive} connection={connectionMap[s.hostId]} />
                   </div>
                 ))}
                 {l1 === 'monitor' && monSessions.length === 0 && (
@@ -764,7 +717,7 @@ export default function App() {
                 )}
                 {l1 === 'files' && fileSessions.map((s) => (
                   <div key={s.id} className={'stage-pane' + (activeFile === s.id ? ' show' : '')}>
-                    <FileManager session={s} active={activeFile === s.id} hosts={hosts} onOpenTerminalAt={openTerminalAt} />
+                    <FileManager session={s} active={activeFile === s.id && mobileWorkActive} hosts={hosts} onOpenTerminalAt={openTerminalAt} />
                   </div>
                 ))}
                 {l1 === 'files' && fileSessions.length === 0 && (
@@ -780,10 +733,12 @@ export default function App() {
       </div>
 
       {/* AI 对话：所有页面都挂右侧（总览 / 工作台 / 配置） */}
-      {(chatOpen || mobile) && !storageError && (
+      {(chatOpen || android) && !storageError && (
         <>
-          <div className="drag-handle-v" onMouseDown={(e) => beginResize(e, 'chat')} title="拖拽调整宽度" />
-          <ChatPanel hosts={hosts} hostsLoaded={hostsLoaded} probeMap={connectionMap} width={chatW} onOpenSettings={() => { setView('settings'); setMobilePage('main'); }} />
+          {!android && <div className="drag-handle-v" onPointerDown={(e) => beginResize(e, 'chat')} title="拖拽调整 AI 宽度" />}
+          <ChatPanel hosts={hosts} hostsLoaded={hostsLoaded} probeMap={connectionMap} width={chatW} onOpenSettings={() => navigate('settings')}
+            inert={android && mobileSidebarOpen ? '' : undefined} onCollapse={android ? undefined : () => setChatOpen(false)}
+            active={android ? mobileChatOpen && !mobileSidebarOpen : chatOpen} keyboardOpen={keyboardOpen} />
         </>
       )}
 

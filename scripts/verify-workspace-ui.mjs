@@ -1,3 +1,4 @@
+import {showMobilePage} from './ui-navigation.mjs';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -46,8 +47,8 @@ try {for(const mobile of [false,true]) {
   }
   await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
  });
- await page.goto('http://127.0.0.1:4173');
- if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'工作台',exact:true}).click();
+ await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
+ if(mobile)await showMobilePage(page,'工作台');
  const panel=page.locator('.workspace-page'),visible=panel.locator('.workspace-tab-pane.on');
  await visible.locator('[data-name="demo.txt"]').waitFor();
  assert.equal(await panel.getByRole('tab').count(),1);assert.equal(await panel.getByLabel('工作区运行环境').count(),0);

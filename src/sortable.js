@@ -16,6 +16,9 @@ export function loadOrder(key, defaultOrder) {
 
 export function createSortable({ getOrder, setOrder, containerRef, itemSelector, onDragStart, onDragEnd }) {
   return (id) => (e) => {
+    if (e.button !== 0) return;
+    const control = e.target.closest('button, input, textarea, select, a');
+    if (control && control !== e.currentTarget) return;
     e.preventDefault();
     let idx = getOrder().indexOf(id);
     if (idx < 0) return;
@@ -23,6 +26,8 @@ export function createSortable({ getOrder, setOrder, containerRef, itemSelector,
     let dragging = false, timer = null;
 
     const begin = () => {
+      if (dragging || !containerRef.current) return;
+      clearTimeout(timer);
       dragging = true;
       document.body.classList.add('sorting');
       onDragStart && onDragStart(id);
@@ -49,11 +54,18 @@ export function createSortable({ getOrder, setOrder, containerRef, itemSelector,
       if (timer) clearTimeout(timer);
       window.removeEventListener('mousemove', move);
       window.removeEventListener('mouseup', up);
+      window.removeEventListener('blur', up);
+      window.removeEventListener('keydown', keydown, true);
       document.body.classList.remove('sorting');
       onDragEnd && onDragEnd(dragging);
     };
+    const keydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); up(); }
+    };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
+    window.addEventListener('blur', up);
+    window.addEventListener('keydown', keydown, true);
     timer = setTimeout(begin, 300);
   };
 }

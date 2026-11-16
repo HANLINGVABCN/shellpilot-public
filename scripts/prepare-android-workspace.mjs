@@ -14,4 +14,5 @@ for(const[arch,abi]of [['aarch64','arm64-v8a'],['x86_64','x86_64']]){
   fs.mkdirSync(path.join(destination,abi),{recursive:true});fs.copyFileSync(input,path.join(destination,abi,name));
  }
 }
+execFileSync('python3',['scripts/align-static-loader.py',destination],{stdio:'inherit'});
 console.log('Verified PRoot and PTY binaries embedded into main APK; no extra Android application');

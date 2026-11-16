@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
+import EdgeHandle from './EdgeHandle.jsx';
 import { loadOrder, createSortable, makeClickSuppressor } from '../sortable.js';
-import { PanelLeftIcon, GridIcon, PromptIcon, ChartIcon, SlidersIcon, EditIcon, TrashIcon, FolderIcon } from '../icons.jsx';
+import { GridIcon, PromptIcon, ChartIcon, SlidersIcon, EditIcon, TrashIcon, FolderIcon } from '../icons.jsx';
 
 const NAV = [
   { id: 'home', icon: <GridIcon />, label: '机器总览' },
@@ -9,7 +10,7 @@ const NAV = [
 ];
 
 export default function Sidebar({
-  width, view, setView, onHide, hosts, probeMap, termHostIds, dataUnavailable=false,
+  width, view, setView, onHide, hosts, probeMap, termHostIds, dataUnavailable=false, mobile=false, mobileOpen=true,
   onOpenTerminal, onOpenMonitor, onOpenFiles, onAdd, onEdit, onDelete, onCloseHost
 }) {
   const [order, setOrder] = useState(() => loadOrder('shellpilot-nav-order', NAV.map((n) => n.id)));
@@ -18,6 +19,7 @@ export default function Sidebar({
   const [dragId, setDragId] = useState(null);
   const suppress = useRef(makeClickSuppressor());
   const [kw, setKw] = useState('');
+  const [hostMenu, setHostMenu] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try { return JSON.parse(localStorage.getItem('shellpilot-collapsed-groups') || '{}') || {}; } catch { return {}; }
   });
@@ -80,8 +82,8 @@ export default function Sidebar({
     return (
       <div
         key={h.id}
-        className="host-item"
-        draggable
+        className={'host-item' + (mobile && hostMenu === h.id ? ' menu-open' : '')}
+        draggable={!mobile}
         onDragStart={(e) => {
           e.dataTransfer.setData('text/sp-host', h.id);
           e.dataTransfer.effectAllowed = 'copy';
@@ -101,6 +103,8 @@ export default function Sidebar({
           <div className="host-addr">{h.username}@{h.host}</div>
           {probeMap[h.id]?.state === 'host-key-required' && <button className="host-identity-action" onClick={(event)=>{event.stopPropagation();onOpenTerminal(h.id);}}>身份变化 · 查看并连接</button>}
         </div>
+        {mobile && <button className="mobile-host-more" aria-label={'更多操作：' + h.name} aria-expanded={hostMenu === h.id}
+          onClick={(event) => { event.stopPropagation(); setHostMenu(hostMenu === h.id ? null : h.id); }}>⋯</button>}
         <div className="host-ops" onClick={(e) => e.stopPropagation()}>
           <button title="新开一个终端标签" onClick={() => onOpenTerminal(h.id, true)}><PromptIcon size={12} /></button>
           <button title="新开一个监控标签" onClick={() => onOpenMonitor(h.id, true)}><ChartIcon size={12} /></button>
@@ -116,15 +120,19 @@ export default function Sidebar({
   };
 
   return (
-    <div className="sidebar" style={{ width, minWidth: width }}>
+    <div id="sidebar-panel" className="sidebar" style={{ width, minWidth: width }}
+      role={mobile ? 'dialog' : undefined} aria-label={mobile ? '导航与服务器' : undefined}
+      aria-modal={mobile && mobileOpen ? true : undefined} inert={mobile && !mobileOpen ? '' : undefined}>
       <div className="logo">
         <img className="logo-mark" src="/shellpilot.svg" alt="ShellPilot" />
         <div>
           <div className="logo-name">ShellPilot</div>
           <div className="logo-sub">AI SSH 工作台</div>
         </div>
-        <button className="side-hide" title="收起侧栏" onClick={onHide}><PanelLeftIcon /></button>
       </div>
+
+      <EdgeHandle panel="sidebar" expanded={mobile ? mobileOpen : true} placement="edge-viewport-left" className="side-edge-hide" onClick={onHide} />
+      <EdgeHandle panel="sidebar" expanded={mobile ? mobileOpen : true} placement="edge-panel-right" className="side-hide" onClick={onHide} />
 
       <div className="nav" ref={navRef} title="长按拖动可调整顺序，第一位的为默认页">
         {order.map((id) => {
@@ -133,7 +141,7 @@ export default function Sidebar({
             <button
               key={id}
               className={'nav-item' + (view === id ? ' on' : '') + (dragId === id ? ' dragging' : '')}
-              onMouseDown={startNavDrag(id)}
+              onMouseDown={mobile ? undefined : startNavDrag(id)}
               onClick={() => { if (!suppress.current.isSuppressed()) setView(id); }}
             >
               <span>{n.icon}</span> {n.label}

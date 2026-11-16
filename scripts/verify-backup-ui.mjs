@@ -1,3 +1,4 @@
+import {showMobilePage} from './ui-navigation.mjs';
 import {chromium} from 'playwright';import assert from 'node:assert/strict';import fs from 'node:fs';
 const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 try{for(const mobile of [false,true]){
@@ -15,7 +16,7 @@ try{for(const mobile of [false,true]){
   if(p==='/api/import'){importBody=request.postDataJSON();importCalls++;value={ok:true};}
   await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
  });
- await page.goto('http://127.0.0.1:4173');if(mobile)await page.locator('.mobile-nav').getByRole('button',{name:'设置',exact:true}).click();
+ await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));if(mobile)await showMobilePage(page,'设置');
  await page.getByRole('button',{name:'📤 导出数据',exact:true}).click();const dialog=page.getByRole('dialog');await dialog.getByText('选择要导出的内容').waitFor();assert.equal(await dialog.getByRole('checkbox').count(),4);
  const optionRects=await dialog.locator('.backup-option').evaluateAll(options=>options.map(option=>{const rect=option.getBoundingClientRect();return{x:rect.x,y:rect.y,height:rect.height,width:rect.width};}));
  assert(optionRects.every(rect=>rect.height===optionRects[0].height),'Backup option rows stay aligned');if(!mobile)assert.equal(optionRects[0].y,optionRects[1].y,'Two columns share the same top edge');

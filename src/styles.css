@@ -1750,56 +1750,48 @@ body.sorting * { cursor: grabbing !important; }
 .home-sub { line-height:1.5; }
 .home-grid { grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr)); }
 @media (max-width: 760px) {
-  html { zoom:1 !important; }
-  body { font-size:14px; }
-  #app.mobile-layout { padding-top:calc(50px + env(safe-area-inset-top)); padding-bottom:env(safe-area-inset-bottom); }
-  .mobile-nav { display:flex; position:fixed; z-index:250; top:0; left:0; right:0; padding:env(safe-area-inset-top) 4px 0; background:var(--panel); border-bottom:1px solid var(--border2); }
-  .mobile-nav button { flex:1; min-width:0; min-height:50px; background:none; border:0; color:var(--muted); font-size:14px; }
-  .mobile-nav button.on { color:var(--accent); box-shadow:inset 0 -2px var(--accent); }
-  .mobile-layout > .sidebar, .mobile-layout > .main, .mobile-layout > .chat-panel { display:none; width:100% !important; min-width:0 !important; max-width:none; flex:1; }
-  .mobile-hosts > .sidebar, .mobile-main > .main, .mobile-chat > .chat-panel { display:flex; }
-  .mobile-layout > .drag-handle-v, .mobile-layout > .sidebar-tab { display:none; }
-  .sidebar { padding:0 12px 12px; }
-  .sidebar .host-item { min-height:58px; }
-  .main { min-width:0; }
-  .mobile-layout .ai-float { display:none; }
-  .work, .stage { min-width:0; min-height:0; }
-  .tabbar { padding:6px; gap:4px; }
-  .tabs .tab { padding:8px 10px; white-space:nowrap; }
-  .subtabs { min-width:0; overflow-x:auto; }
-  .subtab-hint { white-space:normal; font-size:12px; }
-  .home-wrap, .monitor-wrap { padding:12px; }
-  .home-grid { grid-template-columns:minmax(0,1fr); }
-  .stat-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .settings { padding:16px 12px 32px; max-width:none; }
-  .settings .row, .modal .row { flex-direction:column; align-items:stretch; }
-  .settings .row > *, .modal .row > * { min-width:0; width:100%; }
-  .settings-head { flex-wrap:wrap; }
-  .card { min-width:0; }
-  .card-actions, .mcp-header, .mcp-field-row, .mcp-opts { flex-wrap:wrap; }
-  .mcp-field-val { white-space:normal; overflow-wrap:anywhere; margin:0; }
-  .mcp-title { flex-wrap:wrap; gap:8px; }
-  .mcp-badge { white-space:nowrap; flex-shrink:0; }
-  .mcp-code-block { max-width:100%; font-size:12px; }
-  .chat-head { flex-wrap:wrap; gap:8px; padding:10px; }
-  .chat-head > * { min-width:0; flex:1; }
-  .chat-head > .chat-avatar { flex:0 0 24px; }
-  .chat-model { max-width:100%; font-size:13px; }
-  .chat-list { padding:10px; }
-  .msg { max-width:100%; font-size:14px; }
-  .chat-input textarea { font-size:16px; }
-  .chat-actions, .ca-right, .ab-actions { flex-wrap:wrap; gap:6px; }
-  .chat-actions .btn, .pre-input .btn, .ab-actions .btn { min-height:40px; }
-  .dropdown-menu { min-width:min(250px,85vw); max-width:calc(100vw - 24px); }
-  .chat-menu { width:min(300px,85vw); }
-  .scope-menu { max-height:40dvh; }
-  .approval-bar { max-height:42dvh; overflow:auto; }
-  .approval-bar .ab-row { flex-wrap:wrap; }
-  .modal { max-width:calc(100vw - 20px); max-height:calc(var(--sp-viewport-height,100dvh) - 80px); padding:16px; }
-  .import-cols { grid-template-columns:minmax(0,1fr); }
-  .fm-toolbar, .fm-head { flex-wrap:wrap; }
-  .fm-time { display:none; }
-  .fm-size { width:62px; }
-  .fm-props-grid { grid-template-columns:70px minmax(0,1fr); }
-  .toast { max-width:calc(100vw - 24px); white-space:normal; bottom:16px; }
+  html.sp-android { zoom:1 !important; }
+  .sp-android body { font-size:14px; }
+  .sp-android .sidebar { padding:0 12px 12px; }
+  .sp-android .sidebar .host-item { min-height:58px; }
+  .sp-android .main { min-width:0; }
+  .sp-android .work, .sp-android .stage { min-width:0; min-height:0; }
+  .sp-android .tabbar { padding:6px; gap:4px; }
+  .sp-android .tabs .tab { padding:8px 10px; white-space:nowrap; }
+  .sp-android .subtabs { min-width:0; overflow-x:auto; }
+  .sp-android .subtab-hint { white-space:normal; font-size:12px; }
+  .sp-android .home-wrap, .sp-android .monitor-wrap { padding:12px; }
+  .sp-android .home-grid { grid-template-columns:minmax(0,1fr); }
+  .sp-android .stat-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .sp-android .settings { padding:16px 12px 32px; max-width:none; }
+  .sp-android .settings .row, .sp-android .modal .row { flex-direction:column; align-items:stretch; }
+  .sp-android .settings .row > *, .sp-android .modal .row > * { min-width:0; width:100%; }
+  .sp-android .settings-head { flex-wrap:wrap; }
+  .sp-android .card { min-width:0; }
+  .sp-android .card-actions, .sp-android .mcp-header, .sp-android .mcp-field-row, .sp-android .mcp-opts { flex-wrap:wrap; }
+  .sp-android .mcp-field-val { white-space:normal; overflow-wrap:anywhere; margin:0; }
+  .sp-android .mcp-title { flex-wrap:wrap; gap:8px; }
+  .sp-android .mcp-badge { white-space:nowrap; flex-shrink:0; }
+  .sp-android .mcp-code-block { max-width:100%; font-size:12px; }
+  .sp-android .chat-head { flex-wrap:wrap; gap:8px; padding:10px; }
+  .sp-android .chat-head > * { min-width:0; flex:1; }
+  .sp-android .chat-head > .chat-avatar { flex:0 0 24px; }
+  .sp-android .chat-model { max-width:100%; font-size:13px; }
+  .sp-android .chat-list { padding:10px; }
+  .sp-android .msg { max-width:100%; font-size:14px; }
+  .sp-android .chat-input textarea { font-size:16px; }
+  .sp-android .chat-actions, .sp-android .ca-right, .sp-android .ab-actions { flex-wrap:wrap; gap:6px; }
+  .sp-android .chat-actions .btn, .sp-android .pre-input .btn, .sp-android .ab-actions .btn { min-height:40px; }
+  .sp-android .dropdown-menu { min-width:min(250px,85vw); max-width:calc(100vw - 24px); }
+  .sp-android .chat-menu { width:min(300px,85vw); }
+  .sp-android .scope-menu { max-height:40dvh; }
+  .sp-android .approval-bar { max-height:42dvh; overflow:auto; }
+  .sp-android .approval-bar .ab-row { flex-wrap:wrap; }
+  .sp-android .modal { max-width:calc(100vw - 20px); max-height:calc(var(--sp-viewport-height,100dvh) - 80px); padding:16px; }
+  .sp-android .import-cols { grid-template-columns:minmax(0,1fr); }
+  .sp-android .fm-toolbar, .sp-android .fm-head { flex-wrap:wrap; }
+  .sp-android .fm-time { display:none; }
+  .sp-android .fm-size { width:62px; }
+  .sp-android .fm-props-grid { grid-template-columns:70px minmax(0,1fr); }
+  .sp-android .toast { max-width:calc(100vw - 24px); white-space:normal; bottom:16px; }
 }

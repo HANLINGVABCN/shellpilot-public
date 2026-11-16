@@ -4,6 +4,7 @@ data/
 dist/
 node_modules/
 release/
+layout-screenshots/
 dist-actions/
 target/
 .env*

@@ -68,7 +68,7 @@ export function WorkspaceSettings({onTerminal}) {
   </div>;
 }
 
-export default function WorkspacePanel({onClose,fullPage=false,active=true}) {
+export default function WorkspacePanel({onClose,fullPage=false,active=true,keyboardOpen=false}) {
   const [state,setState] = useState(restore), [config,setConfig] = useState({}), [error,setError] = useState(''), [newMenu,setNewMenu] = useState(false);
   const [started,setStarted] = useState(new Set());
   const strip = useRef(null), dragged = useRef(null);
@@ -120,7 +120,7 @@ export default function WorkspacePanel({onClose,fullPage=false,active=true}) {
     <div className="workspace-tab-content">
       {state.tabs.map(tab => <div className={'workspace-tab-pane'+(tab.id===state.active ? ' on' : '')} key={tab.id}>
         {tab.type==='files' && <WorkspaceFiles config={config} active={active&&tab.id===state.active} session={tab} onPath={path => update(tab.id,{path})} onConfigure={() => open('config')} onOpenTerminal={path => open('terminal',path)}/>}
-        {tab.type==='terminal' && started.has(tab.id) && <WorkspaceTerminal session={tab} active={active&&tab.id===state.active} onClose={() => close(tab.id)} onConfigure={() => open('config')}/>}
+        {tab.type==='terminal' && started.has(tab.id) && <WorkspaceTerminal session={tab} active={active&&tab.id===state.active} keyboardOpen={keyboardOpen} onClose={() => close(tab.id)} onConfigure={() => open('config')}/>}
         {tab.type==='config' && <WorkspaceSettings onTerminal={() => open('terminal')}/>}
       </div>)}
     </div>

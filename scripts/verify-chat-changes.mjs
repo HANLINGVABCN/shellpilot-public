@@ -1,3 +1,4 @@
+import {showMobilePage,platformOptions} from './ui-navigation.mjs';
 import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import fs from 'node:fs';
@@ -5,7 +6,7 @@ fs.mkdirSync('layout-screenshots',{recursive:true});
 const browser=await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 try{
  for(const width of [390,1040]){
-  const page=await browser.newPage({locale:'zh-CN',timezoneId:'Asia/Shanghai',viewport:{width,height:850}});
+  const page=await browser.newPage({...platformOptions(width),locale:'zh-CN',timezoneId:'Asia/Shanghai',viewport:{width,height:850}});
   let socket;let jobs={busy:true,activeId:'active',paused:false,queue:[],revision:1,chatId:'chat'};
   page.on('dialog',()=>{throw Error('Unexpected dialog')});
   await page.routeWebSocket('**/ws',ws=>{socket=ws;ws.onMessage(text=>{
@@ -26,7 +27,7 @@ try{
    if(path==='/api/chats/__global__/chat')value={messages:[]};
    await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
   });
-  await page.goto('http://127.0.0.1:4173');if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+  await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));if(width<760)await showMobilePage(page,'AI');
   assert.equal(await page.locator('.mode-wrap > button').innerText(),'完全托管');
   await page.getByRole('button',{name:'暂停',exact:true}).waitFor();
   socket.send(JSON.stringify({type:'chat-start',chatId:'chat',text:'当前任务'}));

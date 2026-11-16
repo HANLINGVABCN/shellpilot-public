@@ -2,6 +2,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
 import './styles.css';
+import './mobile.css';
+import './edge-handles.css';
 
-// 界面缩放统一由 App.jsx 的 apply() 管理（用户偏好 × 窗口自适应，作用于 html 元素）
+// 界面缩放和面板宽度统一由 usePanelLayout 管理。
 createRoot(document.getElementById('root')).render(<App />);

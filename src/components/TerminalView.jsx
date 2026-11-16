@@ -5,16 +5,29 @@ import '@xterm/xterm/css/xterm.css';
 import { ws } from '../ws.js';
 import {api} from '../api.js';
 import {attachTerminalHistory} from '../terminal-history.js';
+import TerminalKeyboard from './TerminalKeyboard.jsx';
+import { terminalKey, modifiedTerminalInput } from '../terminalKeys.js';
 
 // 每个终端会话一个实例；session = { id, hostId, title }
 const connectedPrinted = new Set();
 
-export default function TerminalView({ session, active, pendingCwd, onClearPendingCwd }) {
+export default function TerminalView({ session, active, pendingCwd, onClearPendingCwd, mobile=false, keyboardOpen=false }) {
   const ref = useRef(null);
   const termRef = useRef(null);
   const fitRef = useRef(null);
   const fitFrame = useRef(null);
   const historyRef=useRef(null);
+  const scheduleFitRef=useRef(null);
+  const [modifiers, setModifiers] = useState({ ctrl:false, alt:false });
+  const modifierRef=useRef(modifiers);
+  const [fontSize,setFontSize]=useState(() => {
+    if (!mobile) return 13;
+    try { return Math.min(22,Math.max(10,Number(localStorage.getItem('shellpilot-android-terminal-font')) || 14)); }
+    catch { return 14; }
+  });
+  const fontRef=useRef(fontSize);
+  fontRef.current=fontSize;
+  const changeModifiers=next => {modifierRef.current=next;setModifiers(next);};
 
   // 右键菜单
   const [menu, setMenu] = useState(null);
@@ -28,8 +41,24 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
 
   const sendInput = (data) => {
     if (!session?.id) return;
+    if (mobile && (modifierRef.current.ctrl || modifierRef.current.alt)) {
+      data=modifiedTerminalInput(data,modifierRef.current);
+      changeModifiers({ctrl:false,alt:false});
+    }
     historyRef.current?.input(data);
     ws.send({ type: 'term-input', sessionId: session.id, data });
+  };
+
+  const sendKey=(key,overrides) => {
+    if (!session?.id) return;
+    const modifiers={...modifierRef.current,...overrides};
+    if (historyRef.current?.key({type:'keydown',key,ctrlKey:modifiers.ctrl,altKey:modifiers.alt,metaKey:false,shiftKey:false,preventDefault(){}}) === false) {
+      changeModifiers({ctrl:false,alt:false});return;
+    }
+    const data=terminalKey(key,{...modifiers,applicationCursor:termRef.current?.modes.applicationCursorKeysMode || false});
+    historyRef.current?.input(data);
+    ws.send({type:'term-input',sessionId:session.id,data});
+    changeModifiers({ctrl:false,alt:false});
   };
 
   useEffect(() => {
@@ -38,7 +67,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     const hostId = session.hostId;
     const term = new Terminal({
       allowProposedApi: true,
-      fontSize: 13,
+      fontSize,
       fontFamily: 'Consolas, "Courier New", monospace',
       cursorBlink: true,
       scrollback: 5000,
@@ -56,6 +85,13 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
     term.open(ref.current);
     termRef.current = term;
     fitRef.current = fit;
+    if (mobile) {
+      const input=ref.current.querySelector('.xterm-helper-textarea');
+      input?.setAttribute('autocapitalize','off');
+      input?.setAttribute('autocorrect','off');
+      input?.setAttribute('spellcheck','false');
+      input?.setAttribute('inputmode','text');
+    }
     const history=attachTerminalHistory(term,ref.current);historyRef.current=history;
     let historyLive=true;api('/terminal/history?host='+encodeURIComponent(hostId)).then(value=>{if(historyLive)history.setCommands(value.commands);}).catch(()=>{});
 
@@ -69,6 +105,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
 
     // 快捷键：Ctrl+F 打开搜索，Ctrl+Shift+C 复制
     term.attachCustomKeyEventHandler((ev) => {
+      if (ev.key === 'Escape' && document.body.classList.contains('dragging')) return false;
       if (ev.type === 'keydown') {
         if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === 'f') {
           ev.preventDefault();
@@ -145,7 +182,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
           // The terminal itself has neutral CSS zoom, so mouse coordinates and
           // xterm's cell measurements use the same coordinate system.
           const uiZoom = parseFloat(document.documentElement.style.getPropertyValue('--sp-ui-zoom')) || 1;
-          const size = Math.round(13 * uiZoom * 10) / 10;
+          const size = Math.round(fontRef.current * uiZoom * 10) / 10;
           if (term.options.fontSize !== size) term.options.fontSize = size;
           fit.fit();
           ws.send({ type: 'term-resize', sessionId: sid, cols: term.cols, rows: term.rows });
@@ -156,6 +193,7 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
       cancelAnimationFrame(fitFrame.current);
       fitFrame.current = requestAnimationFrame(() => { fitFrame.current = null; fitNow(); });
     };
+    scheduleFitRef.current=scheduleFit;
     scheduleFit();
     const ro = new ResizeObserver(scheduleFit);
     ro.observe(ref.current);
@@ -177,8 +215,11 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
+      scheduleFitRef.current=null;
     };
   }, [session?.id]);
+
+  useEffect(() => {scheduleFitRef.current?.();},[fontSize,keyboardOpen,searchOpen,modifiers.ctrl,modifiers.alt]);
 
   // 每次切回该终端或有新的目录跳转请求时：重新 attach 并重算尺寸
   const didMountAttach = useRef(false);
@@ -201,12 +242,12 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
           if (ref.current && ref.current.clientWidth > 0 && fitRef.current && termRef.current) {
             fitRef.current.fit();
             ws.send({ type: 'term-resize', sessionId: session.id, cols: termRef.current.cols, rows: termRef.current.rows });
-            termRef.current.focus();
+            if (!mobile) termRef.current.focus();
           }
         } catch {}
       }, 30);
     }
-  }, [active, session?.id, pendingCwd]);
+  }, [active, session?.id, pendingCwd, mobile]);
 
   // 点击外部关闭右键菜单
   useEffect(() => {
@@ -320,6 +361,21 @@ export default function TerminalView({ session, active, pendingCwd, onClearPendi
       )}
 
       <div ref={ref} className="terminal-el" />
+
+      {mobile && active && <TerminalKeyboard modifiers={modifiers} keyboardOpen={keyboardOpen} onKey={sendKey}
+        onModifier={key => changeModifiers(key === 'clear' ? {ctrl:false,alt:false} : {...modifierRef.current,[key]:!modifierRef.current[key]})}
+        onKeyboard={() => keyboardOpen ? termRef.current?.textarea?.blur() : termRef.current?.focus()}
+        onFontSize={delta => setFontSize(previous => {
+          const next=Math.min(22,Math.max(10,previous+delta));
+          try {localStorage.setItem('shellpilot-android-terminal-font',String(next));} catch {}
+          return next;
+        })}
+        onAction={action => {
+          if(action === '搜索') {setSearchOpen(true);setTimeout(() => searchInputRef.current?.focus(),20);}
+          else if(action === '粘贴') {pasteClipboard();termRef.current?.focus();}
+          else if(action === '清屏') termRef.current?.clear();
+          else if(action === '重连') ws.send({type:'attach',sessionId:session.id,hostId:session.hostId});
+        }} />}
 
       {/* 终端右键菜单 */}
       {menu && (
