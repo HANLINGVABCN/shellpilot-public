@@ -112,7 +112,7 @@ html.sp-android { height: 100%; -webkit-text-size-adjust: 100%; }
 }
 .android-app.mobile-chat-open .chat-panel { display: flex; }
 .android-app .chat-head { gap: 8px; min-height: 50px; padding: 6px 12px; }
-.android-app .chat-head > div { min-width: 0; max-width: 50%; }
+.android-app .chat-head > div { min-width: 0; max-width: none; }
 .android-app .chat-head .chat-model { max-width: 100%; min-height: 36px; }
 .android-app .chat-list { padding: 14px; }
 .android-app .chat-empty { padding-top: 24px; }

@@ -218,8 +218,10 @@ try {
     await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
     if(width<760)await showMobilePage(page,'AI');
     await page.getByText('测试消息1',{exact:true}).waitFor();
-    await page.locator('.chat-avatar').evaluate((image)=>image.decode());
-    assert.equal(await page.locator('.chat-avatar').getAttribute('src'),'/shellpilot.svg');
+    assert.equal(await page.locator('.chat-head img').count(),0);
+    const headerControls=await page.locator('.chat-head > div').evaluateAll(elements=>elements.map(element=>element.getBoundingClientRect().toJSON()));
+    assert.equal(headerControls.length,2);
+    assert(headerControls[1].x>=headerControls[0].x+headerControls[0].width,'Conversation and model controls must stay in separate columns');
     await page.locator('.chat-title-btn').click();
     await page.getByRole('button',{name:'删除对话 对话2',exact:true}).click();
     const historyBounds=await page.locator('.chat-menu').boundingBox();
@@ -251,5 +253,5 @@ try {
     assert.equal(await page.locator('.msg.user').count(),0);
     await page.close();
   }
-  console.log('PASS: supplied avatar, visible single/batch/clear deletion with inline confirmation, error recovery and reload');
+  console.log('PASS: logo-free aligned header, visible single/batch/clear deletion with inline confirmation, error recovery and reload');
 } finally { await browser.close(); }

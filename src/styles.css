@@ -620,8 +620,7 @@ textarea { resize: vertical; line-height: 1.6; }
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-size:11px; padding:5px 2px; line-height:1; visibility:visible; flex-shrink:0;
 }
-.chat-avatar { width:24px; height:24px; flex:0 0 24px; align-self:center; }
-.chat-head { position:relative; display:grid; grid-template-columns:24px minmax(0,1fr) minmax(0,1fr); gap:8px; align-items:center; }
+.chat-head { position:relative; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; align-items:center; }
 .chat-head .chat-menu-wrap { position:static; min-width:0; }
 .chat-head .chat-menu { left:12px; top:100%; width:calc(100% - 24px); max-width:calc(100% - 24px); }
 .chat-head .chat-model { max-width:100%; }
@@ -1775,7 +1774,6 @@ body.sorting * { cursor: grabbing !important; }
   .sp-android .mcp-code-block { max-width:100%; font-size:12px; }
   .sp-android .chat-head { flex-wrap:wrap; gap:8px; padding:10px; }
   .sp-android .chat-head > * { min-width:0; flex:1; }
-  .sp-android .chat-head > .chat-avatar { flex:0 0 24px; }
   .sp-android .chat-model { max-width:100%; font-size:13px; }
   .sp-android .chat-list { padding:10px; }
   .sp-android .msg { max-width:100%; font-size:14px; }

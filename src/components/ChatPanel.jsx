@@ -561,7 +561,6 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
     <div id="ai-panel" className="chat-panel" style={{ width, minWidth: width, '--sp-chat-width':`${width}px` }} inert={inert}>
       {onCollapse && <EdgeHandle panel="ai" expanded={true} placement="edge-panel-left" onClick={onCollapse} />}
       <div className="chat-head">
-        <img className="chat-avatar" src="/shellpilot.svg" alt="ShellPilot AI" />
         <div className="chat-menu-wrap">
           <button className="chat-model chat-title-btn" title="对话记录" onClick={() => { const v = !chatMenu; setChatMenu(v); if (v) loadChats(); }}>
             # {chatTitle} ▾
