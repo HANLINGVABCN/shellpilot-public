@@ -74,6 +74,7 @@ if (fs.existsSync(manifestXml)) {
 }
 
 // 4. Copy ShellPilot official icons into app/src/main/res (overwriting Tauri default sample icons)
+await import('./set-icon-background.mjs');
 if (fs.existsSync(srcIconsDir) && fs.existsSync(dstResDir)) {
   fs.cpSync(srcIconsDir, dstResDir, { recursive: true, force: true });
   console.log('✓ Synchronized official ShellPilot icons from src-tauri/icons/android to app/src/main/res');
