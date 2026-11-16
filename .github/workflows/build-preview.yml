@@ -6,12 +6,16 @@ on:
         description: 'Optional successful Android job run to reuse without rebuilding'
         required: false
         default: ''
+      experimental_runner:
+        description: '本次实验服务器专用运行器标签；填写后两端编译与永久签名全部在该服务器完成'
+        required: false
+        default: ''
 permissions:
   contents: read
   actions: read
 jobs:
   android-reuse:
-    if: inputs.android_run != ''
+    if: inputs.android_run != '' && inputs.experimental_runner == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,6 +54,7 @@ jobs:
           path: dist-apk/*
           if-no-files-found: error
   windows:
+    if: inputs.experimental_runner == ''
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -113,7 +118,7 @@ jobs:
           path: dist-win/*
           if-no-files-found: error
   android:
-    if: inputs.android_run == ''
+    if: inputs.android_run == '' && inputs.experimental_runner == ''
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -204,4 +209,32 @@ jobs:
         with:
           name: ShellPilot-android-preview
           path: dist-apk/*
+          if-no-files-found: error
+  experimental:
+    name: 实验服务器双端打包
+    if: startsWith(inputs.experimental_runner, 'shellpilot-public-ui-') && github.repository == 'HANLINGVABCN/shellpilot-public'
+    runs-on: [self-hosted, Linux, ARM64, '${{ inputs.experimental_runner }}']
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: 校验公开源码并复用服务器依赖构建前端
+        run: bash scripts/package-experimental.sh prepare
+      - name: 在实验服务器编译 Windows x64 安装包
+        run: bash scripts/package-experimental.sh windows
+      - name: 在实验服务器编译 Android ARM64 安装包
+        run: bash scripts/package-experimental.sh android
+      - name: 使用公开版永久证书签名并校验安卓安装包
+        env:
+          SIGNING_KEY_B64: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SHELLPILOT_ANDROID_KEYSTORE_PASSWORD }}
+          CERT_SHA256: ${{ vars.SHELLPILOT_ANDROID_CERT_SHA256 }}
+        run: bash scripts/package-experimental.sh sign
+      - name: 校验两端内置界面和原生架构并记录源码提交
+        run: bash scripts/package-experimental.sh info
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: ShellPilot-public-experimental-packages
+          path: release-experimental/*
+          retention-days: 3
           if-no-files-found: error

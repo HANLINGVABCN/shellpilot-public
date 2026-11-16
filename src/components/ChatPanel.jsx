@@ -3,6 +3,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { ws } from '../ws.js';
 import { api } from '../api.js';
+import EdgeHandle from './EdgeHandle.jsx';
 import { reconcileScope, sameScope } from '../scope.js';
 import ToolCard from './ToolCard.jsx';
 import ResizableChatInput from './ResizableChatInput.jsx';
@@ -111,7 +112,7 @@ const fmtTime = (ts) => {
 };
 
 // 全局 AI 对话：不绑定某台机器；用「机器」多选决定 AI 能操作哪些服务器
-export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenSettings }) {
+export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenSettings, inert, onCollapse, active=true, keyboardOpen=false }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState('');
   const [modelName, setModelName] = useState('');
@@ -557,7 +558,8 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   };
 
   return (
-    <div className="chat-panel" style={{ width, minWidth: width, '--sp-chat-width':`${width}px` }}>
+    <div id="ai-panel" className="chat-panel" style={{ width, minWidth: width, '--sp-chat-width':`${width}px` }} inert={inert}>
+      {onCollapse && <EdgeHandle panel="ai" expanded={true} placement="edge-panel-left" onClick={onCollapse} />}
       <div className="chat-head">
         <img className="chat-avatar" src="/shellpilot.svg" alt="ShellPilot AI" />
         <div className="chat-menu-wrap">
@@ -614,7 +616,7 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
       {(busy || paused || queue.length>0) && <div className="task-progress"><span>{paused?(pauseReady?'已暂停':'完成当前操作后暂停'):progress?.phase==='tools'?`执行工具（${progress.tools||1}）`:'思考与生成'}{progress && (progress.maxSteps ? ` · ${progress.step}/${progress.maxSteps} 轮` : ` · 第 ${progress.step} 轮`)}</span><div className="queue-actions"><button className="btn btn-sm" onClick={()=>ws.send({type:paused?'chat-resume':'chat-pause'})}>{paused?'继续':'暂停'}</button>{busy && <button className="btn btn-sm danger" onClick={() => ws.send({type:'chat-stop'})}>停止当前任务</button>}</div></div>}
       {memoryNote && <div className="memory-note" role="status">{memoryNote}</div>}
 
-      {workspaceOpen&&<WorkspacePanel onClose={()=>setWorkspaceOpen(false)} onSettings={onOpenSettings}/>}
+      {workspaceOpen&&<WorkspacePanel onClose={()=>setWorkspaceOpen(false)} onSettings={onOpenSettings} active={active} keyboardOpen={keyboardOpen}/>}
       <div className="chat-history"><div className="chat-list" ref={listRef} onScroll={onListScroll}
         onWheel={(event)=>{if(event.deltaY<0)setFollowBottom(false);}}
         onTouchStart={(event)=>{touchY.current=event.touches[0]?.clientY;}}

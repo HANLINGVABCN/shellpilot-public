@@ -1,16 +1,17 @@
+import {showMobilePage,platformOptions} from './ui-navigation.mjs';
 // GitHub-only browser checks and screenshots; no real hosts or model requests.
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 fs.mkdirSync('layout-screenshots', { recursive: true });
-const browser = await chromium.launch();
+const browser = await chromium.launch({executablePath:process.env.SHELLPILOT_CHROMIUM});
 const hosts = [{id:'a',name:'演示主机 A',host:'alpha.example.com',username:'demo',port:22},{id:'b',name:'演示主机 B',host:'2001:db8::2',username:'demo',port:22},
   ...['测试节点 C','测试节点 D','测试节点 E','测试节点 F','测试节点 G','测试节点 H','测试节点 I','长名称演示节点 J'].map((name,index)=>({id:`extra-${index}`,name,host:`demo-node-${index}.example.com`,username:'demo',port:22}))];
 const settings = {providers:[],models:[],params:{temperature:0.3,maxTokens:2048,historyLimit:12,maxSteps:20,contextChars:60000},systemPrompt:'运维助手',mcpEnabled:true,mcpReadOnly:true};
 try {
   for (const [width, height] of [[360,800],[390,844],[760,600],[1040,720]]) {
-    const page = await browser.newPage({viewport:{width,height},deviceScaleFactor:1,locale:'zh-CN'});
+    const page = await browser.newPage({...platformOptions(width),viewport:{width,height},deviceScaleFactor:1,locale:'zh-CN'});
     const errors = [];
     await page.addInitScript(() => {
       localStorage.setItem('shellpilot-agent-scope', JSON.stringify(['a','b','deleted','a']));
@@ -30,12 +31,12 @@ try {
       if (url === '/api/mcp/config') data = {command:'C:\\Program Files\\ShellPilot\\shellpilot-app.exe',args:['--mcp'],env:{SHELLPILOT_DATA:'C:\\Users\\test\\AppData\\Roaming\\ShellPilot'}};
       await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
     });
-    await page.goto('http://127.0.0.1:4173');
+    await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
     try { await page.locator('#app').waitFor({timeout:10000}); }
     catch (error) { await page.screenshot({path:`layout-screenshots/${width}-failure.png`}); console.error('Page errors:', errors); throw error; }
     const mobile = width <= 760;
     for (const view of mobile ? ['总览','服务器','工作台','AI','设置'] : ['desktop']) {
-      if (mobile) await page.locator('.mobile-nav').getByRole('button',{name:view,exact:true}).click();
+      if (mobile) await showMobilePage(page,view);
       await page.screenshot({path:`layout-screenshots/${width}-${view}.png`});
       const bounds = await page.evaluate(() => ({scroll:document.documentElement.scrollWidth,width:window.innerWidth}));
       assert(bounds.scroll <= bounds.width + 1, `${width}/${view}: horizontal page overflow`);
@@ -59,7 +60,7 @@ try {
         }));
         assert.equal(positions.length,hosts.length);
         for(const row of positions) {
-          assert(Math.abs(row[0].w-16)<1,'Checkbox cannot stretch to full row width');
+          assert(Math.abs(row[0].w-18)<1,'Android checkbox must keep its 18px touch size');
           assert(row.every((item)=>Math.abs(item.center-row[0].center)<2),'All four columns must be vertically aligned');
           assert(row.every((item,index)=>Math.abs(item.x-positions[0][index].x)<1),'Checkbox, dot, name and address columns must align across rows');
           assert(row[2].h<24,'Machine names must not wrap into uneven rows');
@@ -70,7 +71,7 @@ try {
       if (mobile && view === '设置') {
         await page.locator('.mcp-card').scrollIntoViewIfNeeded();
         const rows=await page.locator('.mcp-hosts label').evaluateAll((labels)=>labels.map((label)=>{const checkbox=label.querySelector('input').getBoundingClientRect();const text=label.querySelector('span').getBoundingClientRect();return{width:checkbox.width,cy:checkbox.y+checkbox.height/2,ty:text.y+text.height/2,margin:getComputedStyle(label).marginTop};}));
-        assert(rows.every((row)=>Math.abs(row.width-16)<1 && Math.abs(row.cy-row.ty)<2 && row.margin==='0px'),'MCP checkboxes and labels must align without inherited label margins');
+        assert(rows.every((row)=>Math.abs(row.width-18)<1 && Math.abs(row.cy-row.ty)<2 && row.margin==='0px'),'Android MCP checkboxes and labels must align without inherited label margins');
         await page.screenshot({path:`layout-screenshots/${width}-MCP.png`});
       }
       if(!mobile) {
@@ -87,7 +88,7 @@ try {
   }
   console.log('PASS: mobile navigation, reachable input, valid machine counts, long-message folding, no overflow or browser exceptions');
   for(const width of [390,1040]) {
-    const page=await browser.newPage({viewport:{width,height:800},locale:'zh-CN'});
+    const page=await browser.newPage({...platformOptions(width),viewport:{width,height:800},locale:'zh-CN'});
     let trusted=false; let attachesAfterTrust=0;
     const keys=[...Array.from({length:98},(_,index)=>({key:`unrelated-${index}:22`,hostId:`unrelated-${index}`,host:`unrelated-${index}`,port:22,name:`其他服务器${index}`,fingerprint:`other-${index}`,changed:true,previous:'old'})),
       {key:'db.example:22',hostId:'b',host:'db.example',port:22,name:'第二台测试',fingerprint:'db-fingerprint',changed:true,previous:'old-db'},
@@ -119,7 +120,7 @@ try {
       if(url==='/api/ssh/trust') {const request=route.request().postDataJSON();assert.equal(request.fingerprint,'test-fingerprint');trusted=true;value={ok:true};}
       await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
     });
-    await page.goto('http://127.0.0.1:4173');
+    await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
     await page.getByRole('button',{name:'信任新指纹并连接',exact:true}).waitFor();
     assert.equal(await page.locator('.identity-panel').count(),1,'100 queued changed keys can show only the selected server');
     assert.equal(await page.locator('.identity-server strong').textContent(),'演示主机 A');
@@ -159,7 +160,7 @@ try {
     await page.close();
   }
   console.log('PASS: 100 pending identities stay scoped to active server, fixed navigation, no dialogs, automatic reconnect, Windows connected status');
-  const overview=await browser.newPage({viewport:{width:1040,height:800},locale:'zh-CN'});
+  const overview=await browser.newPage({...platformOptions(1040),viewport:{width:1040,height:800},locale:'zh-CN'});
   await overview.addInitScript(()=>localStorage.setItem('shellpilot-last-view','home'));
   await overview.routeWebSocket('**/ws',()=>{});
   await overview.route('**/api/**',async(route)=>{
@@ -172,7 +173,7 @@ try {
     if(pathname==='/api/ssh/host-keys')result=[{key:'test.example:22',hostId:'a',host:'test.example',port:22,name:hosts[0].name,fingerprint:'changed',previous:'old',changed:true}];
     await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
   });
-  await overview.goto('http://127.0.0.1:4173');
+  await overview.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
   await overview.getByRole('button',{name:'查看指纹并连接',exact:true}).waitFor();
   assert.equal(await overview.locator('.terminal-wrap').count(),0,'No terminal needs to be open to see pending identities');
   await overview.locator('.identity-summary').getByRole('button',{name:'查看',exact:true}).waitFor();
@@ -183,7 +184,7 @@ try {
   await overview.close();
   console.log('PASS: changed identity visible and actionable from overview and sidebar before opening any workspace');
   for(const width of [390,1040]) {
-    const page=await browser.newPage({viewport:{width,height:800},locale:'zh-CN'});
+    const page=await browser.newPage({...platformOptions(width),viewport:{width,height:800},locale:'zh-CN'});
     let conversations=[1,2,3,4].map((number)=>({id:`delete-${number}`,title:`对话${number}`,createdAt:1762401600000,updatedAt:1762401600000,messages:[{role:'user',content:`测试消息${number}`}]}));
     let failOnce=true;
     const dialogs=[];
@@ -214,8 +215,8 @@ try {
       }
       await route.fulfill({contentType:'application/json',body:JSON.stringify(data)});
     });
-    await page.goto('http://127.0.0.1:4173');
-    if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+    await page.goto((process.env.SHELLPILOT_PREVIEW_URL || 'http://127.0.0.1:4173'));
+    if(width<760)await showMobilePage(page,'AI');
     await page.getByText('测试消息1',{exact:true}).waitFor();
     await page.locator('.chat-avatar').evaluate((image)=>image.decode());
     assert.equal(await page.locator('.chat-avatar').getAttribute('src'),'/shellpilot.svg');
@@ -244,7 +245,7 @@ try {
     assert.deepEqual(conversations,[]);
     assert.deepEqual(dialogs,[],'Deletion confirmation must stay in the page, never native dialogs');
     await page.reload();
-    if(width<760)await page.locator('.mobile-nav').getByRole('button',{name:'AI',exact:true}).click();
+    if(width<760)await showMobilePage(page,'AI');
     await page.locator('.chat-title-btn').click();
     await page.getByText('还没有历史对话',{exact:true}).waitFor();
     assert.equal(await page.locator('.msg.user').count(),0);
