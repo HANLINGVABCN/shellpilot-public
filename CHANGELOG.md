@@ -1,6 +1,14 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.2。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.3。
+
+## [build-20261118-v1.0.3](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.3) — 2026-11-18
+
+- AI 顶部同排显示对话名和机器范围，机器列表新增全选、半选状态和取消全选，任务中不能修改范围。
+- 模型选择移到输入框下方，顶部旧模型入口删除；审批模式移到底部左侧，右侧保留模型、思考和发送，菜单向上弹出。
+- 移除输入框下方的工作区按钮和 AI 内嵌工作区，主工作区仍在工作台标签，AI 工作区任务支持保留。
+- 新控件选择与菜单位置、既有排版、折叠、记忆、备份、工作区和终端回归通过；浏览器检查只使用独立静态页面和模拟 API/WebSocket。
+- Windows x64 和 Android ARM64 安装包在实验服务器重新编译，嵌入本次界面、安卓原永久签名、递增版本代码、16KB 页对齐和发布附件摘要已核验。未进行本次真机安装或真实 Windows 程序启动验证。
 
 ## [build-20261117-v1.0.2](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261117-v1.0.2) — 2026-11-17
 
