@@ -222,8 +222,9 @@ try {
     assert.equal(await page.locator('.chat-head img').count(),0);
     const headerControls=await page.locator('.chat-head > div').evaluateAll(elements=>elements.map(element=>element.getBoundingClientRect().toJSON()));
     assert.equal(headerControls.length,2);
-    if(width<760)assert(headerControls[1].x>=headerControls[0].x+headerControls[0].width,'Mobile conversation and model controls must stay in separate columns');
-    else assert(headerControls[1].y>=headerControls[0].y+headerControls[0].height,'Desktop model selector must fit below the conversation selector and corner control');
+    assert(headerControls[1].x>=headerControls[0].x+headerControls[0].width,'Conversation and machine controls must stay in separate columns');
+    assert(Math.abs(headerControls[1].y+headerControls[1].height/2-headerControls[0].y-headerControls[0].height/2)<2,'Conversation and machine controls must share one row');
+    assert.equal(await page.locator('.chat-head .model-wrap').count(),0);assert.equal(await page.locator('.chat-actions .model-wrap').count(),1);
     await page.locator('.chat-title-btn').click();
     await page.getByRole('button',{name:'删除对话 对话2',exact:true}).click();
     const historyBounds=await page.locator('.chat-menu').boundingBox();

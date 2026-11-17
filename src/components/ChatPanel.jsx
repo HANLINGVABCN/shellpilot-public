@@ -8,8 +8,7 @@ import { reconcileScope, sameScope } from '../scope.js';
 import ToolCard from './ToolCard.jsx';
 import ResizableChatInput from './ResizableChatInput.jsx';
 import ReplyStats from './ReplyStats.jsx';
-import WorkspacePanel,{workspaceSupported} from './WorkspacePanel.jsx';
-import {FolderIcon} from '../icons.jsx';
+import {workspaceSupported} from './WorkspacePanel.jsx';
 
 function UserMessage({ text }) {
   const [expanded, setExpanded] = useState(false);
@@ -117,7 +116,6 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
   const [input, setInput] = useState('');
   const [modelName, setModelName] = useState('');
   const [noModel, setNoModel] = useState(false);
-  const [workspaceOpen,setWorkspaceOpen]=useState(false);
   const [workspaceEnabled,setWorkspaceEnabled]=useState(false);
   useEffect(()=>{
     const load=()=>{if(workspaceSupported())api('/workspace').then(config=>setWorkspaceEnabled(!!config.enabled)).catch(()=>{});};
@@ -496,6 +494,13 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
     });
   };
 
+  const toggleAllScope = () => {
+    if (busy || !hostsLoaded) return;
+    const currentHosts = hostsRef.current;
+    const ids = currentHosts.map((host) => host.id);
+    setScope((previous) => (reconcileScope(previous || [], currentHosts) || []).length === ids.length ? [] : ids);
+  };
+
   const newChat = () => {
     if (busy || queue.length) return;
     setFollowBottom(true);
@@ -586,28 +591,25 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
             </div>
           )}
         </div>
-        <div className="model-wrap">
-          <button
-            className="chat-model"
-            title="点击切换模型"
-            onClick={() => { const v = !modelMenu; setModelMenu(v); if (v) loadModels(); }}
-          >
-            {noModel ? '⚠️ 未配置模型' : modelName} ▾
+        <div className="scope-wrap">
+          <button className="btn btn-sm mode-btn" title="选择 AI 可以操作哪些机器" onClick={() => setScopeMenu(!scopeMenu)}>
+            机器 {scopeCount}/{hosts.length}
           </button>
-          {modelMenu && (
-            <div className="dropdown-menu model-menu">
-              {models.length === 0 && <div className="menu-hint">还没有模型，点下面去添加</div>}
-              {models.map((m) => (
-                <button key={m.id} className={'menu-item' + (m.name === modelName ? ' on' : '')} onClick={() => chooseModel(m.id)}>
-                  <span className="mi-name">{m.name}</span>
-                  <span className="mi-prov">{m.providerName}</span>
-                </button>
-              ))}
-              <button className="menu-item manage" onClick={() => { setModelMenu(false); onOpenSettings(); }}>
-                管理服务商与模型…
-              </button>
-            </div>
-          )}
+          {scopeMenu && <div className="dropdown-menu scope-menu">
+            <label className="scope-select-all">
+              <input type="checkbox" disabled={busy || !hostsLoaded || hosts.length === 0} checked={hosts.length > 0 && scopeCount === hosts.length}
+                ref={(element) => { if (element) element.indeterminate = scopeCount > 0 && scopeCount < hosts.length; }} onChange={toggleAllScope} />
+              <span>全选</span>
+            </label>
+            {hosts.length === 0 && <div className="menu-hint">还没有服务器，先去左侧添加</div>}
+            {hosts.map((h) => <label key={h.id} className="scope-item">
+              <input type="checkbox" aria-label={`选择机器 ${h.name}`} disabled={busy} checked={validScope.includes(h.id)} onChange={() => toggleScope(h.id)} />
+              <span className={'dot ' + dotOf(h)} />
+              <span className="si-name" title={h.name}>{h.name}</span>
+              <span className="si-addr" title={`${h.username}@${h.host}`}>{h.username}@{h.host}</span>
+            </label>)}
+            <div className="menu-note">AI 只会在勾选的机器上执行命令</div>
+          </div>}
         </div>
         {onCollapse && <EdgeHandle panel="ai" expanded={true} placement="edge-inline-right" onClick={onCollapse} />}
       </div>
@@ -615,7 +617,6 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
       {(busy || paused || queue.length>0) && <div className="task-progress"><span>{paused?(pauseReady?'已暂停':'完成当前操作后暂停'):progress?.phase==='tools'?`执行工具（${progress.tools||1}）`:'思考与生成'}{progress && (progress.maxSteps ? ` · ${progress.step}/${progress.maxSteps} 轮` : ` · 第 ${progress.step} 轮`)}</span><div className="queue-actions"><button className="btn btn-sm" onClick={()=>ws.send({type:paused?'chat-resume':'chat-pause'})}>{paused?'继续':'暂停'}</button>{busy && <button className="btn btn-sm danger" onClick={() => ws.send({type:'chat-stop'})}>停止当前任务</button>}</div></div>}
       {memoryNote && <div className="memory-note" role="status">{memoryNote}</div>}
 
-      {workspaceOpen&&<WorkspacePanel onClose={()=>setWorkspaceOpen(false)} onSettings={onOpenSettings} active={active} keyboardOpen={keyboardOpen}/>}
       <div className="chat-history"><div className="chat-list" ref={listRef} onScroll={onListScroll}
         onWheel={(event)=>{if(event.deltaY<0)setFollowBottom(false);}}
         onTouchStart={(event)=>{touchY.current=event.touches[0]?.clientY;}}
@@ -690,59 +691,39 @@ export default function ChatPanel({ hosts, hostsLoaded, probeMap, width, onOpenS
         </div>
       )}
 
-      {/* 审批模式：输入框上方左侧 */}
-      <div className="pre-input">
-        <div className="mode-wrap">
-          <button className="btn btn-sm mode-btn" title="切换 AI 执行命令的审批模式" onClick={() => setModeMenu(!modeMenu)}>
-            {curMode.label}
-          </button>
-          {modeMenu && (
-            <div className="dropdown-menu mode-menu">
-              {MODES.map((m) => (
-                <button key={m.id} className={'menu-item' + (m.id === mode ? ' on' : '')} onClick={() => pickMode(m)}>
-                  <span className="mi-main">
-                    <span className="mi-label">{m.label}</span>
-                    <span className="mi-desc">{m.desc}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       <div className="chat-input">
         <ResizableChatInput
           inputRef={editorRef}
           value={input}
-          placeholder={workspaceEnabled?'输入工作区或服务器任务…':hosts.length === 0 ? '先在左侧添加一台服务器' : scopeCount === 0 ? '先在下方「机器」里勾选 AI 能操作的服务器' : '输入任务，回车发送…'}
+          placeholder={workspaceEnabled?'输入工作区或服务器任务…':hosts.length === 0 ? '先在左侧添加一台服务器' : scopeCount === 0 ? '先在上方「机器」里勾选 AI 能操作的服务器' : '输入任务，回车发送…'}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
           }}
         />
         <div className="chat-actions">
-          <div className="scope-wrap">
-            <button className="btn btn-sm mode-btn" title="选择 AI 可以操作哪些机器" onClick={() => setScopeMenu(!scopeMenu)}>
-              机器 {scopeCount}/{hosts.length}
-            </button>
-            {scopeMenu && (
-              <div className="dropdown-menu scope-menu">
-                {hosts.length === 0 && <div className="menu-hint">还没有服务器，先去左侧添加</div>}
-                {hosts.map((h) => (
-                  <label key={h.id} className="scope-item">
-                    <input type="checkbox" disabled={busy} checked={validScope.includes(h.id)} onChange={() => toggleScope(h.id)} />
-                    <span className={'dot ' + dotOf(h)} />
-                    <span className="si-name" title={h.name}>{h.name}</span>
-                    <span className="si-addr" title={`${h.username}@${h.host}`}>{h.username}@{h.host}</span>
-                  </label>
-                ))}
-                <div className="menu-note">AI 只会在勾选的机器上执行命令</div>
-              </div>
-            )}
+          <div className="mode-wrap">
+            <button className="btn btn-sm mode-btn" title="切换 AI 执行命令的审批模式" onClick={() => setModeMenu(!modeMenu)}>{curMode.label}</button>
+            {modeMenu && <div className="dropdown-menu mode-menu">
+              {MODES.map((m) => <button key={m.id} className={'menu-item' + (m.id === mode ? ' on' : '')} onClick={() => pickMode(m)}>
+                <span className="mi-main"><span className="mi-label">{m.label}</span><span className="mi-desc">{m.desc}</span></span>
+              </button>)}
+            </div>}
           </div>
           <div className="ca-right">
-            {workspaceSupported()&&<button className={'btn btn-sm'+(workspaceOpen?' on':'')} title="工作区" aria-label="工作区" onClick={()=>setWorkspaceOpen(value=>!value)}><FolderIcon size={14}/></button>}
+            <div className="model-wrap">
+              <button className="btn btn-sm chat-model model-select-btn" aria-label="选择模型" title={noModel ? '选择模型' : modelName}
+                onClick={() => { const next = !modelMenu; setModelMenu(next); if (next) loadModels(); }}>
+                <span className="model-select-label">{noModel ? '选择模型' : modelName}</span><span aria-hidden="true">▾</span>
+              </button>
+              {modelMenu && <div className="dropdown-menu model-menu">
+                {models.length === 0 && <div className="menu-hint">还没有模型，点下面去添加</div>}
+                {models.map((m) => <button key={m.id} className={'menu-item' + (m.name === modelName ? ' on' : '')} onClick={() => chooseModel(m.id)}>
+                  <span className="mi-name">{m.name}</span><span className="mi-prov">{m.providerName}</span>
+                </button>)}
+                <button className="menu-item manage" onClick={() => { setModelMenu(false); onOpenSettings(); }}>管理服务商与模型…</button>
+              </div>}
+            </div>
             <div className="effort-wrap">
               <button className="btn btn-sm mode-btn" title="思考深度 — 参数会按模型自动翻译，不支持时自动忽略，不会报错" onClick={() => setEffortMenu(!effortMenu)}>
                 思考·{curEffort.label}

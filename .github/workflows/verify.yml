@@ -114,6 +114,7 @@ jobs:
           node scripts/verify-memory-ui.mjs
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
+          node scripts/verify-chat-controls.mjs
           node scripts/verify-workspace-ui.mjs
           node scripts/verify-backup-ui.mjs
           node scripts/verify-terminal-history-ui.mjs

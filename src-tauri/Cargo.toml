@@ -1,7 +1,7 @@
 [package]
 name = "shellpilot-app"
 authors = ["ShellPilot"]
-version = "1.0.2"
+version = "1.0.3"
 description = "ShellPilot - AI SSH 工作台"
 edition = "2021"
 

@@ -56,9 +56,9 @@
 .mobile-header > .mobile-heading { grid-column: 2; grid-row: 1; padding: 0 10px; }
 .mobile-header > .edge-inline-right { grid-column: 3; grid-row: 1; align-self: start; }
 
-.chat-head.has-collapse { height: auto; min-height: 82px; grid-template-columns: minmax(0, 1fr) 8px; gap: 0; padding: 0 0 8px 12px; }
-.chat-head.has-collapse > .chat-menu-wrap { grid-column: 1; grid-row: 1; margin-right: 4px; }
-.chat-head.has-collapse > .model-wrap { grid-column: 1 / 3; grid-row: 2; margin-right: 12px; min-width: 0; }
-.chat-head.has-collapse > .edge-inline-right { grid-column: 2; grid-row: 1; align-self: start; }
+.chat-head.has-collapse { height: 44px; min-height: 44px; grid-template-columns: minmax(0, 1fr) max-content 8px; gap: 6px; padding: 0 0 0 12px; }
+.chat-head.has-collapse > .chat-menu-wrap { grid-column: 1; grid-row: 1; }
+.chat-head.has-collapse > .scope-wrap { grid-column: 2; grid-row: 1; margin-right: 4px; }
+.chat-head.has-collapse > .edge-inline-right { grid-column: 3; grid-row: 1; align-self: start; }
 .chat-head.has-collapse .chat-model { width: 100%; }
 @media (prefers-reduced-motion: reduce) { .edge-hover { transition: none; } }
