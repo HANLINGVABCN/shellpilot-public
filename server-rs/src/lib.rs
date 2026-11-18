@@ -24,6 +24,7 @@ pub mod routes; pub use routes::*;
 pub mod ws; pub use ws::*;
 pub mod mcp; pub use mcp::*;
 pub mod mcp_runtime;
+pub mod mcp_http;
 pub mod operations;
 pub mod memories;
 pub mod jobs;
@@ -91,6 +92,7 @@ impl ExecConn {
 }
 
 pub struct AppState {
+    pub mcp_http:crate::mcp_http::Hub,
     pub workspace:crate::workspace::WorkspaceHub,
     pub folder_picker:std::sync::RwLock<Option<Arc<dyn Fn()->Result<Option<String>,String>+Send+Sync>>>,
     pub backup_saver:std::sync::RwLock<Option<crate::backup_save::Saver>>,
@@ -114,6 +116,7 @@ impl AppState {
     pub fn new() -> Arc<Self> {
         let (tx_all, _) = tokio::sync::broadcast::channel(4096);
         Arc::new(Self {
+            mcp_http:crate::mcp_http::Hub::new(),
             workspace:crate::workspace::WorkspaceHub::new(),
             folder_picker:std::sync::RwLock::new(None),
             backup_saver:std::sync::RwLock::new({
@@ -170,6 +173,8 @@ pub async fn bootstrap(st: &Arc<AppState>) {
         .unwrap_or_default();
     *st.hosts.write().await = hosts.clone();
     st.probes.sync(st, &hosts).await;
+    #[cfg(target_os="android")]
+    {let st=st.clone();tokio::spawn(async move{if let Err(error)=crate::mcp_http::sync_background(&st).await{eprintln!("MCP background: {error}");}});}
 }
 
 /// 桌面/移动壳用：绑定端口并启动服务。

@@ -32,7 +32,11 @@ async fn mcp_call(State(st): State<App>, headers: axum::http::HeaderMap, Json(bo
         Ok(value) => Json(value).into_response(), Err(error) => err400(error),
     }
 }
-async fn mcp_config() -> Response {
+async fn mcp_config(State(st):State<App>,Query(query):Query<HashMap<String,String>>) -> Response {
+    if let Some(transport)=query.get("transport"){
+        return match crate::mcp_http::configuration(&st,transport).await{Ok(value)=>Json(value).into_response(),Err(error)=>err400(error)};
+    }
+    if cfg!(target_os="android"){return err400("安卓请选择 HTTP 或 SSE 接入");}
     match tokio::task::spawn_blocking(crate::mcp_runtime::configuration).await{
         Ok(Ok(config))=>Json(config).into_response(),
         Ok(Err(error))=>err400(error),
@@ -84,7 +88,14 @@ async fn memories_batch(State(st):State<App>,Json(body):Json<Value>)->Response{
         Ok(count)=>{st.broadcast_all(&json!({"type":"memories-changed"}));Json(json!({"changed":count})).into_response()},Err(error)=>err400(error)
     }
 }
-async fn mcp_test()->Response {
+async fn mcp_test(State(st):State<App>,Json(body):Json<Value>)->Response {
+    let transport=body["transport"].as_str().unwrap_or(if cfg!(target_os="android"){"http"}else{"stdio"});
+    if transport!="stdio"{
+        return match tokio::time::timeout(std::time::Duration::from_secs(15),crate::mcp_http::test(&st,transport)).await{
+            Ok(Ok(value))=>Json(value).into_response(),Ok(Err(error))=>err400(error),Err(_)=>err400("MCP 连接测试超时")
+        };
+    }
+    if cfg!(target_os="android"){return err400("安卓支持 HTTP 和 SSE，请选择对应类型");}
     use tokio::io::{AsyncBufReadExt,AsyncWriteExt,BufReader};
     let test=async {
         let executable=std::env::current_exe().map_err(|e|e.to_string())?;
@@ -287,14 +298,17 @@ async fn settings_get(State(_st): State<App>) -> Response {
     Json(crate::get_settings()).into_response()
 }
 
-async fn settings_put(State(_st): State<App>, raw: Result<Json<Value>, axum::extract::rejection::JsonRejection>) -> Response {
+async fn settings_put(State(st): State<App>, raw: Result<Json<Value>, axum::extract::rejection::JsonRejection>) -> Response {
     let s = parse_body(raw).await;
     let ok = s.get("providers").map(|v| v.is_array()).unwrap_or(false)
         && s.get("models").map(|v| v.is_array()).unwrap_or(false);
     if !ok {
         return err400("配置格式错误");
     }
+    let previous=crate::get_settings();
     crate::save_settings(&s);
+    if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
+    if let Err(error)=crate::mcp_http::sync_background(&st).await{crate::save_settings(&previous);return err400(error);}
     Json(json!({ "ok": true })).into_response()
 }
 
@@ -1297,6 +1311,11 @@ async fn static_fallback(method: axum::http::Method, uri: axum::http::Uri) -> Re
 
 pub fn router(st: App) -> Router {
     Router::new()
+        .merge(Router::new()
+            .route("/mcp",post(crate::mcp_http::post).get(crate::mcp_http::get).delete(crate::mcp_http::delete))
+            .route("/mcp/sse",get(crate::mcp_http::sse))
+            .route("/mcp/messages",post(crate::mcp_http::messages))
+            .layer(axum::extract::DefaultBodyLimit::max(1024*1024)))
         .route("/api/workspace",get(crate::workspace::status).put(crate::workspace::configure))
         .route("/api/workspace/pick",post(crate::workspace::pick))
         .route("/api/workspace/files",get(crate::workspace::files))

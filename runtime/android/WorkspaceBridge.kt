@@ -55,6 +55,15 @@ object WorkspaceBridge {
  fun request(activity:Activity,text:String):String { return try{
   val body=JSONObject(text)
   val op=body.optString("op")
+  if(op=="mcp-service"){
+   val intent=Intent(activity,McpService::class.java);val enabled=body.optBoolean("enabled")
+   val finished=CountDownLatch(1);val failure=java.util.concurrent.atomic.AtomicReference<Exception?>(null)
+   activity.runOnUiThread{try{if(enabled){if(Build.VERSION.SDK_INT>=26)activity.startForegroundService(intent)else activity.startService(intent)}else activity.stopService(intent)}catch(error:Exception){failure.set(error)}finally{finished.countDown()}}
+   if(!finished.await(5,TimeUnit.SECONDS))throw IllegalStateException("MCP 后台服务启动超时")
+   failure.get()?.let{throw it}
+   if(enabled){val until=System.currentTimeMillis()+5000;while(!McpService.active&&System.currentTimeMillis()<until)Thread.sleep(50);if(!McpService.active)throw IllegalStateException("MCP 后台服务未启动")}
+   return JSONObject().put("enabled",enabled).toString()
+  }
   if(op=="backup-save"){
    val name=body.getString("name")
    if(!name.matches(Regex("shellpilot-export-[0-9]+\\.(spex|json)")))throw IllegalArgumentException("备份文件名无效")

@@ -30,7 +30,7 @@ pub async fn guard(request:axum::extract::Request,next:axum::middleware::Next)->
             if !same{return (StatusCode::FORBIDDEN,Json(json!({"error":"工作区只允许本机应用页面访问"}))).into_response();}
         }
     }
-    let persistent=(path.starts_with("/api/")||path=="/ws")&&!matches!(path.as_str(),"/api/storage/status"|"/api/storage/retry"|"/api/mcp/config"|"/api/open-external-url");
+    let persistent=(path.starts_with("/api/")||path=="/ws"||path=="/mcp"||path.starts_with("/mcp/"))&&!matches!(path.as_str(),"/api/storage/status"|"/api/storage/retry"|"/api/mcp/config"|"/api/open-external-url");
     if persistent&&crate::storage_fault().is_some(){return unavailable();}
     let result=next.run(request).await;
     if persistent&&crate::storage_fault().is_some(){unavailable()}else{result}

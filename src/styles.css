@@ -1751,6 +1751,9 @@ body.sorting * { cursor: grabbing !important; }
 .mcp-hosts input { width:16px; height:16px; margin:0; padding:0; }
 .mcp-mode-field { display:grid; gap:4px; margin:0; flex:1; min-width:180px; }
 .mcp-mode-field select { width:100%; }
+.mcp-copy-actions { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.mcp-secret { flex:1; min-width:0; width:100%; }
+.mcp-tabs [disabled] { opacity:.35; cursor:default; }
 .mcp-opts:has(.mcp-mode-field) { align-items:end; }
 .home-head { flex-wrap:wrap; gap:6px; padding-right:32px; }
 .home-head h1 { white-space:nowrap; flex-shrink:0; }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import DataBackup from './DataBackup.jsx';
 import MemorySettings from './MemorySettings.jsx';
+import McpSettings from './McpSettings.jsx';
 
 const rand = (p) => p + '_' + Math.random().toString(36).slice(2, 10);
 
@@ -36,31 +37,11 @@ export default function SettingsView() {
   const [manual, setManual] = useState({ providerId: '', value: '' }); // 手动输入模型名
   const [newProv, setNewProv] = useState(null);
   const [zoomPct, setZoomPct] = useState(() => Math.round(parseFloat(localStorage.getItem('shellpilot-zoom') || '1') * 100));
-  const [copiedField, setCopiedField] = useState('');
-  const [mcpTab, setMcpTab] = useState('ui');
-  const [mcpConfig, setMcpConfig] = useState({command:'',args:['--mcp']});
-  const [mcpHosts, setMcpHosts] = useState([]);
   const [hostKeys, setHostKeys] = useState([]);
-  const [mcpTest, setMcpTest] = useState('');
-  const mcpJsonConfig = JSON.stringify({
-    mcpServers: {
-      shellpilot: mcpConfig
-    }
-  }, null, 2);
-
-  const copyText = (txt, field) => {
-    try {
-      navigator.clipboard.writeText(txt);
-      setCopiedField(field);
-      setTimeout(() => setCopiedField(''), 2000);
-    } catch (_) {}
-  };
   const loadSettings=()=>api('/settings','GET',undefined,{timeoutMs:10000}).then(value=>{setS(value);setErr('');}).catch(e=>setErr(e.message));
 
   useEffect(() => {
     loadSettings();
-    api('/mcp/config').then(setMcpConfig).catch(() => {});
-    api('/hosts').then(setMcpHosts).catch(() => {});
     const refreshKeys = () => api('/ssh/host-keys').then(setHostKeys).catch(() => {});
     refreshKeys();
     const timer = setInterval(refreshKeys, 6000);
@@ -69,11 +50,6 @@ export default function SettingsView() {
   const trustKey = async (key) => {
     try { await api('/ssh/trust', 'POST', {hostId:key.hostId,fingerprint:key.fingerprint}); setHostKeys((items) => items.filter((item) => item.key !== key.key)); }
     catch (error) { setErr(error.message); }
-  };
-  const testMcp = async () => {
-    setMcpTest('正在测试…');
-    try { const result = await api('/mcp/test', 'POST', {}); setMcpTest(`连接成功 · ${result.tools} 个工具 · ${result.protocolVersion}`); }
-    catch (error) { setMcpTest(error.message); }
   };
 
   const save = async (next) => {
@@ -419,127 +395,9 @@ export default function SettingsView() {
         <div className="tip-line">首次连接自动保存指纹，以后自动验证。只有指纹变化才需要处理，直接在对应机器的内容区操作。</div>
         {hostKeys.length === 0 ? <div className="menu-note">没有待确认的服务器指纹</div> : hostKeys.map((key) => <div className="host-key" key={key.key}><b>{key.name || key.host}{key.changed ? ' · 指纹已变化' : ' · 首次连接'}</b><div>{key.host}:{key.port}</div><code>{key.fingerprint}</code>{key.previous && <div>原指纹：{key.previous}</div>}<div><button className="btn btn-sm" onClick={() => trustKey(key)}>核对并信任</button></div></div>)}
       </div>
-            {/* ---------- 外部 Agent 联动 (MCP) ---------- */}
-      <div className="sec-title">外部 Agent 联动 (MCP)</div>
-      <div className="tip-line">开启后，你电脑上的其他 AI（如 Claude Desktop、Codex、Antigravity、Cursor）可通过 MCP 协议直接调用 ShellPilot 管理你的 VPS。</div>
+      <McpSettings settings={s} onSave={save}/>
 
-      <div className="mcp-card">
-        <div className="mcp-header">
-          <div className="mcp-title">
-            <span>外部 Agent 接口 (MCP STDIO)</span>
-            <span className={'mcp-badge' + (s?.mcpEnabled ? '' : ' off')}>
-              {s?.mcpEnabled ? '● 接口已开启' : '○ 已关闭'}
-            </span>
-          </div>
-          <div className="mcp-switch-wrap">
-            <span style={{ fontSize: 12, color: s?.mcpEnabled ? 'var(--accent)' : 'var(--muted)' }}>
-              {s?.mcpEnabled ? '已启用' : '点击开启'}
-            </span>
-            <button
-              type="button"
-              className={'mcp-toggle' + (s?.mcpEnabled ? ' on' : '')}
-              onClick={() => save({ ...s, mcpEnabled: !s?.mcpEnabled })}
-              title={s?.mcpEnabled ? '点击关闭 MCP 接口' : '点击开启 MCP 接口'}
-            >
-              <div className="mcp-toggle-knob" />
-            </button>
-          </div>
-        </div>
-
-        {s?.mcpEnabled ? (
-          <div className="mcp-body">
-            <div className="mcp-tabs">
-              <button
-                type="button"
-                className={'mcp-tab-btn' + (mcpTab === 'ui' ? ' active' : '')}
-                onClick={() => setMcpTab('ui')}
-              >
-                表单填法（如自定义 MCP 界面）
-              </button>
-              <button
-                type="button"
-                className={'mcp-tab-btn' + (mcpTab === 'claude' ? ' active' : '')}
-                onClick={() => setMcpTab('claude')}
-              >
-                配置文件填法（如 Claude Desktop）
-              </button>
-            </div>
-
-            {mcpTab === 'ui' ? (
-              <div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-                  在外部客户端的「添加 / 连接至自定义 MCP」表单中依次填入以下参数：
-                </div>
-                <div className="mcp-field-row">
-                  <span className="mcp-field-label">名称</span>
-                  <span className="mcp-field-val">ShellPilot</span>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => copyText('ShellPilot', 'name')}
-                  >
-                    {copiedField === 'name' ? '✓ 已复制' : '复制'}
-                  </button>
-                </div>
-                <div className="mcp-field-row">
-                  <span className="mcp-field-label">类型</span>
-                  <span className="mcp-field-val">STDIO（保持默认）</span>
-                  <button type="button" className="btn btn-sm" disabled style={{ opacity: 0.5 }}>内置</button>
-                </div>
-                <div className="mcp-field-row">
-                  <span className="mcp-field-label">启动命令</span>
-                  <span className="mcp-field-val">{mcpConfig.command || '正在获取程序路径…'}</span>
-                  <button type="button" className="btn btn-sm" disabled={!mcpConfig.command} onClick={() => copyText(mcpConfig.command, 'cmd')}>
-                    {copiedField === 'cmd' ? '✓ 已复制' : '复制'}
-                  </button>
-                </div>
-                <div className="mcp-field-row">
-                  <span className="mcp-field-label">参数</span>
-                  <span className="mcp-field-val">--mcp</span>
-                  <button type="button" className="btn btn-sm" onClick={() => copyText('--mcp', 'args')}>
-                    {copiedField === 'args' ? '✓ 已复制' : '复制'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-                  将以下 JSON 代码块复制到 <code>claude_desktop_config.json</code> 中的 <code>mcpServers</code> 节点：
-                </div>
-                <pre className="mcp-code-block">{mcpJsonConfig}</pre>
-                <button className="btn btn-sm" disabled={!mcpConfig.command} onClick={() => copyText(`[mcp_servers.shellpilot]\ncommand = ${JSON.stringify(mcpConfig.command)}\nargs = ["--mcp"]\n\n[mcp_servers.shellpilot.env]\nSHELLPILOT_DATA = ${JSON.stringify(mcpConfig.env?.SHELLPILOT_DATA || '')}\n`, 'toml')}>{copiedField === 'toml' ? '✓ 已复制' : '复制 Codex TOML 配置'}</button>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm primary"
-                    onClick={() => copyText(mcpJsonConfig, 'json')}
-                  >
-                    {copiedField === 'json' ? '✓ 已复制完整配置' : '一键复制完整 JSON 配置'}
-                  </button>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    * 严格双反斜杠转义，支持直接粘贴到客户端
-                  </span>
-                </div>
-              </div>
-            )}
-
-            <div className="mcp-opts">
-              <label className="mcp-mode-field"><span>MCP 执行模式</span><select value={s.mcpReadOnly ? 'readonly' : s.mcpApprovalMode || 'ask'} onChange={(e)=>save({...s,mcpReadOnly:e.target.value==='readonly',mcpApprovalMode:e.target.value==='readonly'?'ask':e.target.value})}><option value="readonly">只读查询</option><option value="ask">主窗口人工审批</option><option value="ai">AI 审批</option><option value="auto">自动执行（高风险仍拦截）</option><option value="full">完全托管（所有命令直接执行）</option></select></label>
-              <button className="btn btn-sm" onClick={testMcp}>测试 MCP 连接</button><span>{mcpTest}</span>
-            </div>
-            {!s.mcpReadOnly && s.mcpApprovalMode==='full' && <div className="menu-note">完全托管已开启：授权机器上的修改、删除等命令直接执行，不再请求审批。修改范围仍由下方机器选择控制。</div>}
-            <label style={{marginTop:12}}>允许外部 AI 操作的机器</label>
-            <div className="mcp-hosts">{mcpHosts.map((host) => <label key={host.id}><input type="checkbox" checked={!Array.isArray(s.mcpHostIds) || s.mcpHostIds.includes(host.id)} onChange={(e) => { const ids = Array.isArray(s.mcpHostIds) ? s.mcpHostIds : mcpHosts.map((h) => h.id); save({...s,mcpHostIds:e.target.checked ? [...ids,host.id] : ids.filter((id) => id !== host.id)}); }} /><span title={host.name}>{host.name}</span></label>)}</div>
-            <div className="menu-note">内置 AI 与 MCP 共用 9 个工具：批量执行、系统诊断、日志、文件预览与安全修改。批量执行沿用所选权限，人工审批需要主窗口保持运行。</div>
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-            未开启。开启后外部 Agent 可通过标准协议自动识别你配置的 VPS，并按需执行维护指令。
-          </div>
-        )}
-      </div>
-
-<div className="sec-title">操作审计</div>
+      <div className="sec-title">操作审计</div>
       <div className="tip-line">AI 每次执行命令都会记录在 <code>data/audit.log</code>，可随时查看它干了什么。</div>
 
       {/* ---------- 拉取模型弹窗 ---------- */}

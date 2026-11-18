@@ -97,6 +97,8 @@ jobs:
         run: node scripts/verify-batch-exec.mjs
       - name: Same MCP process survives main app restarts
         run: node scripts/verify-mcp-restart.mjs
+      - name: STDIO HTTP and legacy SSE compatibility
+        run: node scripts/verify-mcp-transports.mjs
       - name: Real Bash and Zsh terminal command history
         run: |
           command -v zsh || (sudo apt-get update -qq && sudo apt-get install -y -qq zsh)
@@ -116,6 +118,7 @@ jobs:
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
           node scripts/verify-chat-controls.mjs
+          node scripts/verify-mcp-settings-ui.mjs
           node scripts/verify-workspace-ui.mjs
           node scripts/verify-backup-ui.mjs
           node scripts/verify-backup-save-ui.mjs

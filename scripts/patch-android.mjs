@@ -89,6 +89,7 @@ const javaRoot=path.join(androidRoot,'app/src/main/java/app/shellpilot/client');
 fs.mkdirSync(javaRoot,{recursive:true});
 fs.copyFileSync('runtime/android/WorkspaceBridge.kt',path.join(javaRoot,'WorkspaceBridge.kt'));
 fs.copyFileSync('runtime/android/IntegratedWorkspaceService.java',path.join(javaRoot,'IntegratedWorkspaceService.java'));
+fs.copyFileSync('runtime/android/McpService.java',path.join(javaRoot,'McpService.java'));
 const mainFile=path.join(javaRoot,'MainActivity.kt');
 if(fs.existsSync(mainFile)){
  let source=fs.readFileSync(mainFile,'utf8');
@@ -104,6 +105,7 @@ appManifest=appManifest.replace(/<uses-permission android:name="android.permissi
 if(!appManifest.includes('android.permission.FOREGROUND_SERVICE_SPECIAL_USE'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/><uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>\n<application`);
 if(!appManifest.includes('app.shellpilot.workspace.ACCESS'))appManifest=appManifest.replace(/<application/,`<uses-permission android:name="app.shellpilot.workspace.ACCESS"/><queries><package android:name="app.shellpilot.workspace"/></queries>\n<application`);
 if(!appManifest.includes('IntegratedWorkspaceService'))appManifest=appManifest.replace('</application>',`<service android:name=".IntegratedWorkspaceService" android:process=":workspace" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User initiated local Linux workspace terminal and file tasks"/></service></application>`);
+if(!appManifest.includes('McpService'))appManifest=appManifest.replace('</application>',`<service android:name=".McpService" android:exported="false" android:foregroundServiceType="specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User enabled local MCP HTTP and SSE service"/></service></application>`);
 appManifest=appManifest.replace(/android:extractNativeLibs="[^"]*"/,'android:extractNativeLibs="true"');
 if(!appManifest.includes('android:extractNativeLibs='))appManifest=appManifest.replace('<application','<application android:extractNativeLibs="true"');
 fs.writeFileSync(manifestXml,appManifest);
