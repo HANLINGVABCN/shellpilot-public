@@ -1,6 +1,14 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.3。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.4。
+
+## [build-20261118-v1.0.4](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.4) — 2026-11-18
+
+- 导出时由用户选择目录和文件名，Windows 弹出系统另存为，安卓使用系统文件保存界面；取消不保存，失败不显示成功。
+- 导出密码可选，留空生成普通 JSON，填写密码生成加密 .spex；导入自动识别两种格式，原加密备份保持密码校验。
+- 写入完成后显示保存位置，Windows 先写同目录临时文件再原子替换目标，安卓保存流程独立于 Linux 工作区。
+- 7 项后端备份单元检查、四类普通/加密导出的 HTTP 验收与两端模拟界面回归通过；同一原生路径选择代码的独立 Windows 程序已实际验证中文路径和取消。
+- 两端安装包已在实验服务器编译并核对嵌入界面、安卓原永久签名、版本代码递增和 16KB 页对齐。未进行本次安卓真机保存验证或真实 Windows 应用安装验证。
 
 ## [build-20261118-v1.0.3](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.3) — 2026-11-18
 
