@@ -23,7 +23,14 @@ try{for(const mode of ['merge','overwrite'])for(const key of keys){
   for(const candidate of keys)assert.equal(Object.hasOwn(plain,contentKey[candidate]),candidate===key);
   if(key!=='hosts')assert(!JSON.stringify(plain).includes('old-host-secret'));if(key!=='providers')assert(!JSON.stringify(plain).includes('old-provider-secret'));
   const detected=await call('/import/preview',{password:'fixture-password',data:bytes.toString('base64')});assert.equal(detected.counts[key],1);for(const candidate of keys)if(candidate!==key)assert.equal(detected.counts[candidate],0);
+  const plainResponse=await fetch(base+'/api/export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'',sections:select(key)})});assert(plainResponse.ok);assert(plainResponse.headers.get('content-disposition').includes('.json'));
+  const plainBytes=Buffer.from(await plainResponse.arrayBuffer()),plainPayload=JSON.parse(plainBytes.toString());assert(!plainBytes.subarray(0,8).equals(Buffer.from('SPEXPT01')));
+  for(const candidate of keys)assert.equal(Object.hasOwn(plainPayload,contentKey[candidate]),candidate===key);
+  const plainPreview=await call('/import/preview',{password:'',data:plainBytes.toString('base64')});assert.equal(plainPreview.counts[key],1);
+  await call('/import',{password:'',data:plainBytes.toString('base64'),sections:select(key),mode:'merge'});
+  await call('/import/preview',{password:'',data:bytes.toString('base64')},false);
   await call('/export',{password:'fixture-password',sections:{}},false);
+  await call('/export',{password:false,sections:select(key)},false);
   const unavailable=key==='memories'?'hosts':'memories';await call('/import',{password:'fixture-password',data:bytes.toString('base64'),sections:select(unavailable),mode},false);
   const baseline=Object.fromEntries(['hosts','settings','chats','memories'].map(name=>[name,fs.readFileSync(path.join(directory,name+'.json'),'utf8')]));
   const incoming=fixture('new'),data=encode(incoming,'fixture-password').toString('base64');
@@ -36,4 +43,4 @@ try{for(const mode of ['merge','overwrite'])for(const key of keys){
   if(key==='chats'){await call('/import',{password:'fixture-password',data,sections:select(key),mode:'merge'});assert.equal(JSON.parse(fs.readFileSync(path.join(directory,'chats.json'),'utf8')).__global__.length,changed.__global__.length);}
   await call('/import',{password:'wrong-password',data,sections:select(key)},false);
  }finally{if(server.exitCode===null){server.kill();await once(server,'exit');}}
-}console.log('PASS: all four independent encrypted exports; detection, missing-category rejection, merge/overwrite only chosen files, memory enabled flags and repeatable chats');}finally{fs.rmSync(root,{recursive:true,force:true});}
+}console.log('PASS: all four plain/encrypted exports, optional passwords, detection, category isolation, merge/overwrite and repeated imports');}finally{fs.rmSync(root,{recursive:true,force:true});}

@@ -7,6 +7,8 @@ pub mod chats; pub use chats::*;
 pub mod metrics; pub use metrics::*;
 pub mod import; pub use import::*;
 pub mod backup;
+pub mod backup_save;
+#[cfg(windows)]pub mod backup_save_windows;
 pub mod ai; pub use ai::*;
 pub mod ssh; pub use ssh::*;
 pub mod pool; pub use pool::*;
@@ -91,6 +93,7 @@ impl ExecConn {
 pub struct AppState {
     pub workspace:crate::workspace::WorkspaceHub,
     pub folder_picker:std::sync::RwLock<Option<Arc<dyn Fn()->Result<Option<String>,String>+Send+Sync>>>,
+    pub backup_saver:std::sync::RwLock<Option<crate::backup_save::Saver>>,
     pub external_opener:std::sync::RwLock<Option<Arc<dyn Fn(&str)->Result<(),String>+Send+Sync>>>,
     pub tool_operations: std::sync::atomic::AtomicUsize,
     pub hosts: RwLock<Vec<Value>>,
@@ -113,6 +116,10 @@ impl AppState {
         Arc::new(Self {
             workspace:crate::workspace::WorkspaceHub::new(),
             folder_picker:std::sync::RwLock::new(None),
+            backup_saver:std::sync::RwLock::new({
+                #[cfg(windows)] { Some(Arc::new(crate::backup_save::windows_save) as crate::backup_save::Saver) }
+                #[cfg(not(windows))] { None }
+            }),
             external_opener:std::sync::RwLock::new(None),
             tool_operations:std::sync::atomic::AtomicUsize::new(0),
             hosts: RwLock::new(Vec::new()),

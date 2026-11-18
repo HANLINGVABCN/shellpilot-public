@@ -16,10 +16,27 @@ object WorkspaceBridge {
  private var exportPath:String?=null
  private const val exportCode=41212
  private const val importCode=41213
+ private const val backupCode=41214
+ private class BackupSave(val bytes:ByteArray,val name:String){val latch=CountDownLatch(1);@Volatile var response=JSONObject().put("saved",false)}
+ private val backupLock=Any()
+ private var backupSave:BackupSave?=null
  private var importTarget:String?=null
  private val importLock=Any()
  private var importState=JSONObject().put("phase","idle").put("files",0)
  fun result(activity:Activity,code:Int,result:Int,data:Intent?){
+  if(code==backupCode){
+   val pending=synchronized(backupLock){backupSave}?:return
+   if(result!=Activity.RESULT_OK||data?.data==null){completeBackup(pending,JSONObject().put("saved",false).put("cancelled",true));return}
+   val uri=data.data!!
+   Thread{try{
+    val output=activity.contentResolver.openOutputStream(uri,"wt")?:throw IllegalStateException("无法打开选择的文件位置")
+    output.use{it.write(pending.bytes);it.flush()}
+    val fileName=try{activity.contentResolver.query(uri,arrayOf(android.provider.OpenableColumns.DISPLAY_NAME),null,null,null)?.use{if(it.moveToFirst())it.getString(0)else null}?:pending.name}catch(_:Exception){pending.name}
+    val location=try{val id=DocumentsContract.getDocumentId(uri);if(id.startsWith("primary:"))"内部存储/"+id.substringAfter(':') else fileName}catch(_:Exception){fileName}
+    completeBackup(pending,JSONObject().put("saved",true).put("path",location))
+   }catch(error:Exception){completeBackup(pending,JSONObject().put("error",error.message?:"备份保存失败"))}}.start()
+   return
+  }
   if(code==importCode){
    val target=synchronized(importLock){val value=importTarget;importTarget=null;value}
    if(result!=Activity.RESULT_OK||data?.data==null||target==null){synchronized(importLock){importState=JSONObject().put("phase","cancelled").put("files",0)};return}
@@ -38,6 +55,19 @@ object WorkspaceBridge {
  fun request(activity:Activity,text:String):String { return try{
   val body=JSONObject(text)
   val op=body.optString("op")
+  if(op=="backup-save"){
+   val name=body.getString("name")
+   if(!name.matches(Regex("shellpilot-export-[0-9]+\\.(spex|json)")))throw IllegalArgumentException("备份文件名无效")
+   val bytes=android.util.Base64.decode(body.getString("data"),android.util.Base64.DEFAULT)
+   val pending=BackupSave(bytes,name)
+   synchronized(backupLock){if(backupSave!=null)throw IllegalStateException("正在选择备份保存位置");backupSave=pending}
+   activity.runOnUiThread{try{
+    activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+     .setType(if(name.endsWith(".json"))"application/json" else "application/octet-stream").putExtra(Intent.EXTRA_TITLE,name),backupCode)
+   }catch(error:Exception){completeBackup(pending,JSONObject().put("error",error.message?:"无法打开保存对话框"))}}
+   pending.latch.await()
+   return pending.response.toString()
+  }
   if(op=="user-import-status")return synchronized(importLock){importState.toString()}
   if(op=="user-import-directory"){
    synchronized(importLock){if(importState.optString("phase") in listOf("choosing","copying"))throw IllegalStateException("文件夹上传正在进行");importTarget=body.optString("path","");importState=JSONObject().put("phase","choosing").put("files",0)}
@@ -72,6 +102,9 @@ object WorkspaceBridge {
    }finally{descriptor?.close();input.recycle();output.recycle()}
   }finally{activity.unbindService(connection)}
  }catch(error:Exception){JSONObject().put("error",error.message?:"安卓工作区操作失败").toString()} }
+ private fun completeBackup(pending:BackupSave,response:JSONObject){
+  synchronized(backupLock){if(backupSave!==pending)return;backupSave=null;pending.response=response;pending.bytes.fill(0);pending.latch.countDown()}
+ }
  private fun invoke(activity:Activity,body:JSONObject):JSONObject{
   val value=JSONObject(request(activity,body.toString()));if(value.has("error"))throw IllegalStateException(value.getString("error"));return value
  }

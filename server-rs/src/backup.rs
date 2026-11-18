@@ -4,6 +4,17 @@ use serde_json::{json,Map,Value};
 use crate::import::{validate_import_data,prepare_import,ImportOptions,GLOBAL_KEY};
 
 const AI_KEYS:&[&str]=&["providers","models","defaultModelId","approverModelId","titleModelId","params","systemPrompt"];
+pub fn encode_file(payload:&Value,password:&str)->Result<(Vec<u8>,&'static str),String>{
+ let plaintext=serde_json::to_vec_pretty(payload).map_err(|_|"备份生成失败")?;
+ if password.is_empty(){Ok((plaintext,"json"))}else{Ok((crate::crypt::encrypt_data(&plaintext,password),"spex"))}
+}
+pub fn decode_file(bytes:&[u8],password:&str)->Result<Value,String>{
+ let plain=if bytes.starts_with(crate::crypt::MAGIC){
+  if password.is_empty(){return Err("此备份已加密，请输入导入密码".into());}
+  crate::crypt::decrypt_data(bytes,password)?
+ }else{bytes.to_vec()};
+ serde_json::from_slice(&plain).map_err(|_|"文件格式不正确或不是 ShellPilot 备份文件".into())
+}
 #[derive(Clone,Copy,Default,Deserialize,Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Sections{#[serde(default)]pub hosts:bool,#[serde(default)]pub providers:bool,#[serde(default)]pub chats:bool,#[serde(default)]pub memories:bool}
@@ -79,6 +90,14 @@ pub fn prepare_selected(current:&Value,incoming:&Value,sections:Sections,options
  use super::*;
  fn fixture()->Value{json!({"version":1,"hosts":[{"id":"h","name":"Demo","host":"192.0.2.1","port":22,"username":"demo","password":"host-secret"}],"settings":{"providers":[{"id":"p","name":"Provider","baseURL":"https://api.example/v1","apiKey":"provider-secret"}],"models":[{"id":"m","providerId":"p","name":"demo-model"}],"defaultModelId":"m","mcpEnabled":true,"autoMemory":false},"chats":{"h":[{"id":"chat","title":"fixture","messages":[{"role":"user","content":"hello"}]}]},"memories":[{"id":"mem","content":"Keep replies short","enabled":false}]})}
  fn options(mode:&str)->ImportOptions{ImportOptions{host_ids:None,provider_ids:None,mode:Some(mode.into())}}
+ #[test]fn optional_password_roundtrips_plain_and_encrypted_selected_backup(){
+  let selected=export_selected(&fixture(),Sections{memories:true,..Default::default()}).unwrap();
+  let (plain,extension)=encode_file(&selected,"").unwrap();assert_eq!(extension,"json");assert_eq!(decode_file(&plain,"").unwrap(),selected);
+  assert!(!String::from_utf8(plain.clone()).unwrap().contains("host-secret"));
+  let (encrypted,extension)=encode_file(&selected,"fixture-password").unwrap();assert_eq!(extension,"spex");assert!(encrypted.starts_with(crate::crypt::MAGIC));
+  assert_eq!(decode_file(&encrypted,"fixture-password").unwrap(),selected);assert!(decode_file(&encrypted,"").unwrap_err().contains("已加密"));assert!(decode_file(&encrypted,"wrong-password").is_err());
+  assert!(decode_file(b"invalid backup","").is_err());
+ }
  #[test]fn each_export_omits_unselected_credentials_and_records(){
   for sections in [Sections{hosts:true,..Default::default()},Sections{providers:true,..Default::default()},Sections{chats:true,..Default::default()},Sections{memories:true,..Default::default()}]{let result=export_selected(&fixture(),sections).unwrap();assert_eq!(result.get("hosts").is_some(),sections.hosts);assert_eq!(result.get("settings").is_some(),sections.providers);assert_eq!(result.get("chats").is_some(),sections.chats);assert_eq!(result.get("memories").is_some(),sections.memories);if !sections.hosts{assert!(!result.to_string().contains("host-secret"));}if !sections.providers{assert!(!result.to_string().contains("provider-secret"));}if sections.providers{assert!(result["settings"].get("mcpEnabled").is_none());}}
  }

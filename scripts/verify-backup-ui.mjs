@@ -5,7 +5,7 @@ try{for(const mobile of [false,true]){
  const page=await browser.newPage({locale:'zh-CN',viewport:{width:mobile?390:1200,height:850},userAgent:mobile?'Mozilla/5.0 (Linux; Android 13) Chrome/141 Mobile':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/141'});
  let detected={hosts:2,providers:1,chats:3,memories:4},importBody=null,exportBody=null,previewCalls=0,importCalls=0;
  const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('dialog',()=>{throw Error('Unexpected browser confirmation')});
- await page.addInitScript(()=>localStorage.setItem('shellpilot-last-view','settings'));
+ await page.addInitScript(()=>{localStorage.setItem('shellpilot-last-view','settings');Object.defineProperty(window,'showSaveFilePicker',{value:undefined,configurable:true});});
  await page.routeWebSocket('**/ws',()=>{});
  await page.route('**/api/**',async route=>{
   const request=route.request(),p=new URL(request.url()).pathname;let value=[];

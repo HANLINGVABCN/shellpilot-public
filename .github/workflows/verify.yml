@@ -117,6 +117,7 @@ jobs:
           node scripts/verify-chat-controls.mjs
           node scripts/verify-workspace-ui.mjs
           node scripts/verify-backup-ui.mjs
+          node scripts/verify-backup-save-ui.mjs
           node scripts/verify-terminal-history-ui.mjs
       - uses: actions/upload-artifact@v4
         if: always()

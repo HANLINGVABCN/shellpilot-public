@@ -385,24 +385,39 @@ async fn chats_delete_batch(State(st):State<App>,Path(key):Path<String>,Json(bod
 
 async fn export(State(_st): State<App>, raw: Result<Json<Value>, axum::extract::rejection::JsonRejection>) -> Response {
     let b = parse_body(raw).await;
-    let password = opt_str(&b, "password").unwrap_or_default();
-    if password.is_empty() {
-        return err400("密码不能为空");
+    export_response(b, None).await
+}
+
+async fn export_save(State(st): State<App>, raw: Result<Json<Value>, axum::extract::rejection::JsonRejection>) -> Response {
+    let b = parse_body(raw).await;
+    export_response(b, Some(st)).await
+}
+
+async fn export_response(b: Value, save_to: Option<App>) -> Response {
+    if !b.is_object() || b.get("password").is_some_and(|value| !value.is_string()) {
+        return err400("导出参数格式错误");
     }
+    let password = opt_str(&b, "password").unwrap_or_default();
     let all=crate::crypt::export_all();
     if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
     let payload=if let Some(value)=b.get("sections"){
         let sections=match crate::backup::Sections::parse(value){Ok(sections)=>sections,Err(error)=>return err400(error)};
         match crate::backup::export_selected(&all,sections){Ok(payload)=>payload,Err(error)=>return err400(error)}
     }else{all};
-    let plaintext = serde_json::to_string_pretty(&payload).unwrap_or_default();
-    let buf = crate::crypt::encrypt_data(plaintext.as_bytes(), &password);
+    let (buf, extension) = match crate::backup::encode_file(&payload,&password) { Ok(file)=>file, Err(error)=>return err400(error) };
+    let filename = format!("shellpilot-export-{}.{extension}", now_ms());
+    if let Some(st) = save_to {
+        return match crate::backup_save::save(&st, buf, filename).await {
+            Ok(value) => Json(value).into_response(),
+            Err(error) => err400(error)
+        };
+    }
     (
         [
-            (header::CONTENT_TYPE, "application/octet-stream".to_string()),
+            (header::CONTENT_TYPE, if extension=="json" {"application/json"}else{"application/octet-stream"}.to_string()),
             (
                 header::CONTENT_DISPOSITION,
-                format!("attachment; filename=\"shellpilot-export-{}.spex\"", now_ms()),
+                format!("attachment; filename=\"{filename}\""),
             ),
         ],
         buf,
@@ -414,8 +429,8 @@ async fn import_preview(State(_st): State<App>, raw: Result<Json<Value>, axum::e
     let b = parse_body(raw).await;
     let password = opt_str(&b, "password").unwrap_or_default();
     let data = opt_str(&b, "data").unwrap_or_default();
-    if password.is_empty() || data.is_empty() {
-        return err400("密码和数据不能为空");
+    if data.is_empty() {
+        return err400("请选择备份文件");
     }
     let decrypted = match decode_and_decrypt(&data, &password) {
         Ok(v) => v,
@@ -476,9 +491,9 @@ async fn import_preview(State(_st): State<App>, raw: Result<Json<Value>, axum::e
     Json(json!({ "hosts": hosts, "providers": providers, "hasChats": has_chats,"counts":counts })).into_response()
 }
 
-async fn export_preview()->Response{
+async fn export_preview(State(st):State<App>)->Response{
     let data=crate::crypt::export_all();if let Some(error)=crate::storage_fault(){return err(StatusCode::SERVICE_UNAVAILABLE,error);}
-    match crate::backup::counts(&data){Ok(counts)=>Json(json!({"counts":counts})).into_response(),Err(error)=>err400(error)}
+    match crate::backup::counts(&data){Ok(counts)=>Json(json!({"counts":counts,"nativeSave":crate::backup_save::native_available(&st)})).into_response(),Err(error)=>err400(error)}
 }
 
 fn decode_and_decrypt(data: &str, password: &str) -> Result<Value, String> {
@@ -486,16 +501,15 @@ fn decode_and_decrypt(data: &str, password: &str) -> Result<Value, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data.as_bytes())
         .map_err(|_| "文件格式不正确或不是 ShellPilot 导出文件".to_string())?;
-    let plain = crate::crypt::decrypt_data(&bytes, password)?;
-    serde_json::from_slice(&plain).map_err(|_| "文件格式不正确或不是 ShellPilot 导出文件".to_string())
+    crate::backup::decode_file(&bytes,password)
 }
 
 async fn import(State(st): State<App>, raw: Result<Json<Value>, axum::extract::rejection::JsonRejection>) -> Response {
     let b = parse_body(raw).await;
     let password = opt_str(&b, "password").unwrap_or_default();
     let data = opt_str(&b, "data").unwrap_or_default();
-    if password.is_empty() || data.is_empty() {
-        return err400("密码和数据不能为空");
+    if data.is_empty() {
+        return err400("请选择备份文件");
     }
     if {let agent=st.agent.lock().await;agent.busy || !agent.queue.is_empty()} {
         return err(StatusCode::CONFLICT, "AI 正在执行任务，请等待任务结束后再导入");
@@ -1321,6 +1335,7 @@ pub fn router(st: App) -> Router {
         .route("/api/chats/{key}/delete", post(chats_delete_batch))
         .route("/api/chats/{key}/{chat_id}", get(chats_get).delete(chats_delete))
         .route("/api/export", post(export))
+        .route("/api/export/save",post(export_save))
         .route("/api/export/preview",get(export_preview))
         .route("/api/import/preview", post(import_preview))
         .route("/api/import", post(import))
