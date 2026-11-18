@@ -67,20 +67,21 @@ html.sp-android { height: 100%; -webkit-text-size-adjust: 100%; }
 .android-app .side-label { font-size: 11px; }
 .android-app .side-search { min-height: 40px; font-size: 14px !important; }
 .android-app .host-item {
-  display: flex; flex-wrap: wrap; gap: 8px;
+  display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px;
   padding: 8px; border: 1px solid transparent; margin-bottom: 2px;
 }
 .android-app .host-name { font-size: 13.5px; }
 .android-app .host-addr { margin-top: 3px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .android-app .host-ops {
-  display: none !important; flex-basis: 100%; justify-content: flex-end; gap: 3px;
+  display: none !important; flex-basis: 100%; flex-wrap: wrap; justify-content: flex-end; gap: 3px;
 }
 .android-app .host-item.menu-open .host-ops { display: flex !important; }
 .android-app .host-ops button {
-  display: flex; align-items: center; justify-content: center; min-height: 36px; min-width: 36px;
+  display: flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; flex-shrink: 0;
   border: 0; background: transparent; color: var(--muted); opacity: 1;
 }
 .mobile-host-more { width: 32px; min-height: 40px; border: 0; background: transparent; color: var(--muted); font-size: 22px; }
+.android-app .host-list { min-height: 0; }
 .android-app .host-ops button.danger { color: var(--red); }
 .android-app .add-host { margin-top: 8px; min-height: 44px; font-size: 13px; }
 .android-app .host-group-hdr { min-height: 40px; }

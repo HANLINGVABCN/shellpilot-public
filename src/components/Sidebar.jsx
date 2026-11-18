@@ -112,7 +112,7 @@ export default function Sidebar({
           {termHostIds?.has?.(h.id) && (
             <button title="断开" onClick={() => onCloseHost(h.id)}>⏏</button>
           )}
-          <button title="编辑" onClick={() => onEdit(h)}><EditIcon size={12} /></button>
+          <button type="button" title="编辑" aria-label={`编辑机器 ${h.name}`} onClick={() => onEdit(h)}><EditIcon size={12} /></button>
           <button title="删除" className="danger" onClick={() => onDelete(h)}><TrashIcon size={12} /></button>
         </div>
       </div>

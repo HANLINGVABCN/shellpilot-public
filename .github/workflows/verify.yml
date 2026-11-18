@@ -111,6 +111,7 @@ jobs:
           for attempt in $(seq 1 50); do curl -fsS http://127.0.0.1:4173 >/dev/null && break; sleep 0.2; done
           node scripts/verify-layout.mjs
           node scripts/verify-fold-controls.mjs
+          node scripts/verify-android-host-edit.mjs
           node scripts/verify-memory-ui.mjs
           node scripts/verify-reading-terminal.mjs
           node scripts/verify-chat-changes.mjs
