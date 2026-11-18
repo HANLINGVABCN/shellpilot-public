@@ -2,6 +2,13 @@
 
 按 GitHub Release 标签记录；应用内部版本当前为 1.0.4。
 
+## [build-20261118-direct-update](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-direct-update) — 2026-11-18
+
+- Windows 正常升级和同版重装直接覆盖程序文件，跳过“安装前卸载”的维护选择页，保留原安装目录。
+- 实验服务器重新生成安装程序，主应用仍为 1.0.4，安卓与便携包原样复用上一版已验证的文件。
+- 从实际安装脚本提取的维护函数已在独立 Windows 目录完成 1.0.3 升级和 1.0.4 重装：跳过维护页、替换程序标记、未调用旧卸载器、四类测试配置摘要不变。
+- 新安装程序与 main 模板一致，应用 EXE、安卓和便携包摘要与上一版相同；未在用户真实安装目录执行覆盖更新。
+
 ## [build-20261118-v1.0.4](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.4) — 2026-11-18
 
 - 导出时由用户选择目录和文件名，Windows 弹出系统另存为，安卓使用系统文件保存界面；取消不保存，失败不显示成功。
