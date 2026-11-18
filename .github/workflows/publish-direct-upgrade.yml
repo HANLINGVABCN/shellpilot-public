@@ -25,7 +25,10 @@ jobs:
         run: |
           set -euo pipefail
           git diff --exit-code 0935c77248757e28cb174a1ba3a3f29da87a3907 HEAD -- src public server-rs runtime index.html package.json package-lock.json vite.config.mjs src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json src-tauri/src src-tauri/icons
-          cmp src-tauri/installer.nsi /opt/shellpilot-build/direct-upgrade-20261118/source/src-tauri/installer.nsi
+          python3 - <<'PY'
+          from pathlib import Path
+          assert Path('src-tauri/installer.nsi').read_text()==Path('/opt/shellpilot-build/direct-upgrade-20261118/source/src-tauri/installer.nsi').read_text(),'安装模板内容不一致'
+          PY
       - name: 复用已签名 APK 和便携包并收集修正安装程序
         run: |
           set -euo pipefail
