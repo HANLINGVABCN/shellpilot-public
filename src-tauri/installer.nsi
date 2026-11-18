@@ -184,9 +184,10 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
   !insertmacro MULTIUSER_PAGE_INSTALLMODE
 !endif
 
-; 4. Custom page to ask user if he wants to reinstall/uninstall
-;    only if a previous installation was detected
+; 4. Normal upgrades and reinstalls copy files directly. This page is reserved
+;    for downgrade or migration from a different installer type.
 Var ReinstallPageCheck
+Var DirectInstall
 Page custom PageReinstall PageLeaveReinstall
 
 ; Find a previous WiX installation and set $R6 to its uninstall registry key, or to "" if none.
@@ -219,6 +220,7 @@ Function FindWixInstall
 FunctionEnd
 
 Function PageReinstall
+  StrCpy $DirectInstall 0
   ; Uninstall previous WiX installation if exists.
   Call FindWixInstall
   ${If} $R6 != ""
@@ -244,6 +246,14 @@ Function PageReinstall
 
   nsis_tauri_utils::SemverCompare "${VERSION}" $R0
   Pop $R0
+
+  ; Keep the existing NSIS installation and its data during normal updates.
+  ; Abort here skips this custom page; the Install section replaces app files.
+  ${If} $WixMode = 0
+  ${AndIf} $R0 <> -1
+    StrCpy $DirectInstall 1
+    Abort
+  ${EndIf}
 
   ; Read the install choice header through $R5 so a custom language file that only
   ; defines the misspelled `choowHowToInstall` still shows its own text
@@ -327,6 +337,9 @@ Function PageReinstallUpdateSelection
   ${EndIf}
 FunctionEnd
 Function PageLeaveReinstall
+  ${If} $DirectInstall = 1
+    Return
+  ${EndIf}
   ${NSD_GetState} $R2 $R1
 
   ; If migrating from Wix, always uninstall

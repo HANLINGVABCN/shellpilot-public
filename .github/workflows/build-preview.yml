@@ -69,6 +69,8 @@ jobs:
           npm run tauri -- icon build/icon.png
           node scripts/set-icon-background.mjs
       - run: npm run build
+      - name: Verify direct upgrade installer flow
+        run: node scripts/verify-installer-update.mjs
       - name: Native Windows performance collector test
         shell: pwsh
         run: ./scripts/verify-windows-metrics.ps1
