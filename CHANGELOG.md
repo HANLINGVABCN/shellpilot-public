@@ -1,6 +1,13 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.4。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.5。
+
+## [build-20261118-v1.0.5](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.5) — 2026-11-18
+
+- 修复安卓机器列表较长时行高被压缩、编辑按钮落到下一台机器区域而无法点击的问题。
+- 安卓机器行按内容保留高度，操作栏可换行，按钮触控范围至少 44×44 像素，列表正常滚动。
+- 24 台机器的普通列表与分组列表、窄屏和横屏触控回归通过，首台、中间、末台均能打开正确编辑记录，保存/取消正常且未误开 SSH 连接。
+- 两端安装包已在实验服务器重编译，安卓永久签名、递增版本代码、16KB 页对齐及嵌入修正版界面已核验；保留 Windows 直接更新和既有 AI、备份功能。未进行本次安卓真机触控验证。
 
 ## [build-20261118-direct-update](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-direct-update) — 2026-11-18
 
