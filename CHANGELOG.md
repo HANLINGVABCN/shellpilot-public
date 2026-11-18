@@ -1,6 +1,13 @@
 # 更新记录
 
-按 GitHub Release 标签记录；应用内部版本当前为 1.0.5。
+按 GitHub Release 标签记录；应用内部版本当前为 1.0.6。
+
+## [build-20261118-v1.0.6](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.6) — 2026-11-18
+
+- 电脑支持 STDIO、Streamable HTTP 和旧 SSE，安卓支持 HTTP/SSE；配置页可切换传输并复制实际地址、认证头和配置。
+- 网络接入共用九个工具、授权范围和审批，验证来源与连接密钥，支持初始化、会话、取消与连接测试，断线不会自动重放工具调用。
+- 安卓启用后用主进程前台服务维持接口，后台服务启动失败会提示并回滚设置，重开后异步恢复；网络连接密钥独立持久化。
+- 真实隔离 HTTP/SSE/STDIO 联通、权限和重启回归及双端界面回归通过，两端包在实验服务器生成并核验嵌入界面与原安卓签名。未进行本次安卓真机后台验证。
 
 ## [build-20261118-v1.0.5](https://github.com/HANLINGVABCN/shellpilot-public/releases/tag/build-20261118-v1.0.5) — 2026-11-18
 
